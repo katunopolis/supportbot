@@ -1,3 +1,8 @@
+import telegram  # for catching Forbidden
+import sqlite3
+import os
+import uvicorn
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -8,10 +13,7 @@ from telegram.ext import (
     ContextTypes
 )
 from fastapi import FastAPI
-import telegram  # for catching Forbidden
-import sqlite3
-import os
-import uvicorn
+from dotenv import load_dotenv  # Import dotenv to load .env variables
 
 # Create FastAPI instance
 fastapi_app = FastAPI()
@@ -28,8 +30,12 @@ async def set_webhook():
     bot = Bot(token=TOKEN)
     await bot.set_webhook(WEBHOOK_URL)
 
+# Load environment variables from .env (if present)
+load_dotenv()
+
 # Telegram Bot Token
 TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
+
 if not TOKEN:
     raise ValueError("Error: SUPPORT_BOT_TOKEN is not set. Please set it in your environment variables.")
 
