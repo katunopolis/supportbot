@@ -8,6 +8,7 @@ import telegram  # Catching Forbidden errors
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.lifespan import Lifespan
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -134,11 +135,12 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[DEBUG] Received issue from user {user_id}: {issue_description}")
 
         # Save issue to database
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
-            conn.commit()
-            request_id = cursor.lastrowid
+        conn = sqlite3.connect("support_requests.db")
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
+        conn.commit()
+        request_id = cursor.lastrowid
+        conn.close()
 
         # Build Admin Group Message with Action Buttons
         buttons = [
@@ -161,25 +163,7 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data[f"requesting_support_{user_id}"] = False
 
 # ===============================
-#  ✅ SHUTDOWN EVENT (Graceful Cleanup)
-# ===============================
-
-@fastapi_app.on_event("shutdown")
-async def shutdown():
-    """Remove Telegram webhook on shutdown to prevent stale webhooks."""
-    from telegram import Bot
-    try:
-        bot = Bot(token=TOKEN)
-        success = await bot.delete_webhook()
-        if success:
-            print("[INFO] Webhook removed successfully.")
-        else:
-            print("[WARNING] Webhook removal request sent but not confirmed.")
-    except Exception as e:
-        print(f"[ERROR] Failed to remove webhook on shutdown: {e}")
-
-# ===============================
-#  ✅ STARTUP EVENT (Initialization)
+#  ✅ FASTAPI LIFESPAN (STARTUP & SHUTDOWN)
 # ===============================
 
 @fastapi_app.on_event("startup")
@@ -188,6 +172,17 @@ async def startup():
     init_db()
     await set_webhook()
     print("[INFO] Webhook set successfully.")
+
+@fastapi_app.on_event("shutdown")
+async def shutdown():
+    """Remove Telegram webhook on shutdown to prevent stale webhooks."""
+    from telegram import Bot
+    try:
+        bot = Bot(token=TOKEN)
+        await bot.delete_webhook()
+        print("[INFO] Webhook removed successfully.")
+    except Exception as e:
+        print(f"[ERROR] Failed to remove webhook on shutdown: {e}")
 
 # ===============================
 #  ✅ MAIN FUNCTION
@@ -199,7 +194,6 @@ def main():
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("request", request_support))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_issue))
-    bot_app.add_handler(CallbackQueryHandler(assign_request))
 
     print("🚀 Bot is running on webhook mode...")
     uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
