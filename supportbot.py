@@ -80,6 +80,23 @@ async def webhook(update: dict):
     except Exception as e:
         print(f"[ERROR] Webhook error: {e}")
         return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
+    
+@fastapi_app.post("/support-request")
+async def support_request_handler(payload: dict):
+    """Handles support requests submitted from the Web App."""
+    try:
+        user_id = payload.get("user_id")
+        issue = payload.get("issue")
+        # Save the issue to the database (similar to collect_issue() logic)
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue))
+            conn.commit()
+            request_id = cursor.lastrowid
+        # Optionally notify the admin group here
+        return JSONResponse(content={"message": f"Support request submitted successfully! Request ID: {request_id}"})
+    except Exception as e:
+        return JSONResponse(content={"message": str(e)}, status_code=500)
 
 # -------------------------------
 # DATABASE SETUP & UTILITIES
@@ -132,7 +149,7 @@ async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /request command from the public group by opening a Web App."""
     user_id = update.message.from_user.id
     # Instead of prompting text, we now open the web app:
-    webapp_url = "https://your-webapp.netlify.app"  # Replace with your actual web app URL
+    webapp_url = "webapp-support-bot-production.up.railway.app"  # Replace with your actual web app URL
     keyboard = [[InlineKeyboardButton("Open Support Form", web_app=WebAppInfo(url=webapp_url))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
