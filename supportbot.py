@@ -23,6 +23,12 @@ print(f"Bot Token Loaded: {TOKEN[:5]}********")  # Obfuscate token for security
 # 🔹 Admin Group Chat ID (Change this to your actual admin group)
 ADMIN_GROUP_ID = -4771220922
 
+# 🔹 Root endpoint to confirm the app is running
+
+@fastapi_app.get("/")
+async def root():
+    return {"message": "Telegram Support Bot API is running!"}
+
 # 🔹 Webhook URL (Update this based on Railway deployment)
 WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 
