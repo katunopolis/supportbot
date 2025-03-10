@@ -25,3 +25,8 @@ async def get_request(request_id: int):
     if request_id in requests:
         return requests[request_id]
     return {"error": "Request not found"}
+
+import uvicorn
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8080)
