@@ -29,13 +29,10 @@ ADMIN_GROUP_ID = -4771220922
 # 🔹 Webhook URL (Update this based on Railway deployment)
 WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 
-# 🔹 Initialize Telegram Bot Application
+# 🔹 Initialize Telegram Bot Application (Only once)
 bot_app = Application.builder().token(TOKEN).build()
 
-# 🔹 Initialize Telegram Bot Application
-bot_app = Application.builder().token(TOKEN).build()
-
-# ✅ **Fix: Add Root Route AFTER defining `fastapi_app`**
+# ✅ **Root Route (For health check)**
 @fastapi_app.get("/")
 async def root():
     return {"message": "Telegram Support Bot API is running!"}
@@ -46,11 +43,6 @@ async def webhook(update: dict):
     """Handles incoming Telegram updates via webhook."""
     update = Update.de_json(update, bot_app.bot)
     await bot_app.process_update(update)
-
-# 🔹 Root endpoint to confirm the app is running
-@fastapi_app.get("/")
-async def root():
-    return {"message": "Telegram Support Bot API is running!"}
 
 # ===============================
 #  ✅ DATABASE SETUP & UTILITIES
