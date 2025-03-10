@@ -10,8 +10,11 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes
 )
 
-# Load environment variables from .env file
+# 🔹 Load environment variables from .env file
 load_dotenv()
+
+# 🔹 Initialize FastAPI App FIRST before using it
+fastapi_app = FastAPI()
 
 # 🔹 Load Telegram Bot Token from environment
 TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
@@ -23,19 +26,31 @@ print(f"Bot Token Loaded: {TOKEN[:5]}********")  # Obfuscate token for security
 # 🔹 Admin Group Chat ID (Change this to your actual admin group)
 ADMIN_GROUP_ID = -4771220922
 
-# 🔹 Root endpoint to confirm the app is running
+# 🔹 Webhook URL (Update this based on Railway deployment)
+WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
+
+# 🔹 Initialize Telegram Bot Application
+bot_app = Application.builder().token(TOKEN).build()
+
+# 🔹 Initialize Telegram Bot Application
+bot_app = Application.builder().token(TOKEN).build()
+
+# ✅ **Fix: Add Root Route AFTER defining `fastapi_app`**
 @fastapi_app.get("/")
 async def root():
     return {"message": "Telegram Support Bot API is running!"}
 
-# 🔹 Webhook URL (Update this based on Railway deployment)
-WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
+# ✅ **Webhook Route (For Telegram to send updates)**
+@fastapi_app.post("/webhook")
+async def webhook(update: dict):
+    """Handles incoming Telegram updates via webhook."""
+    update = Update.de_json(update, bot_app.bot)
+    await bot_app.process_update(update)
 
-# 🔹 FastAPI Application (Used for webhook communication)
-fastapi_app = FastAPI()
-
-# 🔹 Initialize Telegram Bot Application
-bot_app = Application.builder().token(TOKEN).build()
+# 🔹 Root endpoint to confirm the app is running
+@fastapi_app.get("/")
+async def root():
+    return {"message": "Telegram Support Bot API is running!"}
 
 # ===============================
 #  ✅ DATABASE SETUP & UTILITIES
