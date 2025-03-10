@@ -1,17 +1,18 @@
+# 🔹 Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import sqlite3
 import telegram  # Catching Forbidden errors
 import uvicorn
 from fastapi import FastAPI
-from dotenv import load_dotenv  # Load .env variables
+from fastapi.responses import JSONResponse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes
 )
-
-# 🔹 Load environment variables from .env file
-load_dotenv()
 
 # 🔹 Initialize FastAPI App FIRST before using it
 fastapi_app = FastAPI()
@@ -41,8 +42,13 @@ async def root():
 @fastapi_app.post("/webhook")
 async def webhook(update: dict):
     """Handles incoming Telegram updates via webhook."""
-    update = Update.de_json(update, bot_app.bot)
-    await bot_app.process_update(update)
+    try:
+        update = Update.de_json(update, bot_app.bot)
+        await bot_app.process_update(update)
+        return JSONResponse(content={"status": "ok"})
+    except Exception as e:
+        print(f"[ERROR] Webhook error: {e}")
+        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
 
 # ===============================
 #  ✅ DATABASE SETUP & UTILITIES
@@ -50,26 +56,34 @@ async def webhook(update: dict):
 
 def init_db():
     """Initialize SQLite database for storing support requests."""
-    conn = sqlite3.connect("support_requests.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            issue TEXT,
-            assigned_admin INTEGER DEFAULT NULL,
-            status TEXT DEFAULT 'Open',
-            solution TEXT DEFAULT NULL
-        )
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    issue TEXT,
+                    assigned_admin INTEGER DEFAULT NULL,
+                    status TEXT DEFAULT 'Open',
+                    solution TEXT DEFAULT NULL
+                )
+            """)
+    except sqlite3.Error as e:
+        print(f"[ERROR] Database error: {e}")
 
 async def set_webhook():
     """Sets Telegram bot webhook for handling messages via FastAPI."""
     from telegram import Bot
-    bot = Bot(token=TOKEN)
-    await bot.set_webhook(WEBHOOK_URL)
+    try:
+        bot = Bot(token=TOKEN)
+        success = await bot.set_webhook(WEBHOOK_URL)
+        if success:
+            print("[INFO] Webhook set successfully.")
+        else:
+            print("[WARNING] Webhook request sent, but Telegram did not confirm.")
+    except Exception as e:
+        print(f"[ERROR] Failed to set webhook: {e}")
 
 # ===============================
 #  ✅ COMMAND HANDLERS
@@ -120,12 +134,11 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[DEBUG] Received issue from user {user_id}: {issue_description}")
 
         # Save issue to database
-        conn = sqlite3.connect("support_requests.db")
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
-        conn.commit()
-        request_id = cursor.lastrowid
-        conn.close()
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
+            conn.commit()
+            request_id = cursor.lastrowid
 
         # Build Admin Group Message with Action Buttons
         buttons = [
@@ -148,63 +161,45 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data[f"requesting_support_{user_id}"] = False
 
 # ===============================
-#  ✅ ADMIN ACTIONS
+#  ✅ SHUTDOWN EVENT (Graceful Cleanup)
 # ===============================
 
-async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Assigns an admin to a request and notifies the user."""
-    query = update.callback_query
-    admin_id = query.from_user.id
-    request_id = int(query.data.split("_")[1])
-
-    conn = sqlite3.connect("support_requests.db")
-    cursor = conn.cursor()
-    cursor.execute("UPDATE requests SET assigned_admin = ?, status = 'Assigned' WHERE id = ?", (admin_id, request_id))
-    cursor.execute("SELECT user_id FROM requests WHERE id = ?", (request_id,))
-    user = cursor.fetchone()
-    conn.commit()
-    conn.close()
-
-    if user:
-        user_id = user[0]
-        admin_username = query.from_user.username or "Admin"
-        admin_link = f"https://t.me/{admin_username}" if admin_username else f"tg://user?id={admin_id}"
-
-        # Notify User
-        await context.bot.send_message(
-            user_id,
-            f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open a direct chat.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Admin Chat", url=admin_link)]])
-        )
-        await query.answer("You have been assigned to this request.")
+@fastapi_app.on_event("shutdown")
+async def shutdown():
+    """Remove Telegram webhook on shutdown to prevent stale webhooks."""
+    from telegram import Bot
+    try:
+        bot = Bot(token=TOKEN)
+        success = await bot.delete_webhook()
+        if success:
+            print("[INFO] Webhook removed successfully.")
+        else:
+            print("[WARNING] Webhook removal request sent but not confirmed.")
+    except Exception as e:
+        print(f"[ERROR] Failed to remove webhook on shutdown: {e}")
 
 # ===============================
-#  ✅ TELEGRAM WEBHOOK HANDLER
+#  ✅ STARTUP EVENT (Initialization)
 # ===============================
 
-@fastapi_app.post("/webhook")
-async def webhook(update: dict):
-    """Handles incoming Telegram updates via webhook."""
-    update = Update.de_json(update, bot_app.bot)
-    await bot_app.process_update(update)
+@fastapi_app.on_event("startup")
+async def startup():
+    """Initialize bot and set webhook asynchronously."""
+    init_db()
+    await set_webhook()
+    print("[INFO] Webhook set successfully.")
 
 # ===============================
 #  ✅ MAIN FUNCTION
 # ===============================
 
 def main():
-    """Initializes bot, database, and webhook, then starts FastAPI server."""
-    init_db()  # Ensure database is set up
-
-    # Add Telegram command handlers
+    """Starts FastAPI server and registers bot handlers."""
+    # ✅ Register Telegram handlers BEFORE starting FastAPI
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("request", request_support))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_issue))
     bot_app.add_handler(CallbackQueryHandler(assign_request))
-
-    # Set webhook before running server
-    import asyncio
-    asyncio.run(set_webhook())
 
     print("🚀 Bot is running on webhook mode...")
     uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
