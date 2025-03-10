@@ -61,6 +61,18 @@ async def lifespan(app: FastAPI):
 # Attach lifespan to FastAPI app
 fastapi_app = FastAPI(lifespan=lifespan)
 
+# 🔹 Add a CORS middleware to your FastAPI app
+
+from fastapi.middleware.cors import CORSMiddleware
+
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For development; restrict this in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # -------------------------------
 # FASTAPI ROUTES
 # -------------------------------
@@ -83,19 +95,32 @@ async def webhook(update: dict):
     
 @fastapi_app.post("/support-request")
 async def support_request_handler(payload: dict):
-    """Handles support requests submitted from the Web App."""
+    """
+    Handles support requests from the Web App.
+    Expects a JSON payload with keys 'user_id' and 'issue'.
+    """
     try:
         user_id = payload.get("user_id")
         issue = payload.get("issue")
-        # Save the issue to the database (similar to collect_issue() logic)
+        if not user_id or not issue:
+            return JSONResponse(content={"message": "Missing user_id or issue"}, status_code=400)
+        
+        # Save issue to the database
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue))
             conn.commit()
             request_id = cursor.lastrowid
-        # Optionally notify the admin group here
-        return JSONResponse(content={"message": f"Support request submitted successfully! Request ID: {request_id}"})
+        
+        # Optionally, notify the admin group about the new support request:
+        await bot_app.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+            parse_mode="Markdown"
+        )
+        return JSONResponse(content={"message": "Support request submitted successfully", "request_id": request_id})
     except Exception as e:
+        print(f"[ERROR] Support request error: {e}")
         return JSONResponse(content={"message": str(e)}, status_code=500)
 
 # -------------------------------
