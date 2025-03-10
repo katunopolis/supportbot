@@ -80,27 +80,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Welcome! Use /request in the group to get support.")
 
-async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles /request command from the public group."""
-    user_id = update.message.from_user.id
+from telegram import WebAppInfo
 
+async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles /request command from the public group by opening the Web App support form."""
+    user_id = update.message.from_user.id
+    webapp_url = "https://your-webapp.netlify.app"  # Replace with your actual web app URL
+
+    # Build a button that opens the support web app
+    keyboard = [[InlineKeyboardButton("Open Support Form", web_app=WebAppInfo(url=webapp_url))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # If the message is not in a private chat, simply send the button
     if update.message.chat.type != "private":
-        try:
-            await context.bot.send_message(user_id, "I see you need support! Please describe the issue:")
-            context.user_data[f"requesting_support_{user_id}"] = True
-            await context.bot.send_message(update.message.chat_id, f"@{update.message.from_user.username}, check your private messages.")
-        except telegram.error.Forbidden:
-            # Bot can't DM user → Ask them to start chat manually
-            context.user_data[f"pending_request_{user_id}"] = True
-            keyboard = [[InlineKeyboardButton("Start Chat with Bot", url=f"https://t.me/{context.bot.username}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(
-                f"@{update.message.from_user.username}, click below to start a private chat with the bot.",
-                reply_markup=reply_markup
-            )
+        await update.message.reply_text(
+            "Click the button below to open our support form:",
+            reply_markup=reply_markup
+        )
     else:
-        await update.message.reply_text("Please describe your issue:")
-        context.user_data[f"requesting_support_{user_id}"] = True
+        # In a private chat, you can also use the web app button or prompt text input
+        await update.message.reply_text(
+            "Click the button below to open our support form:",
+            reply_markup=reply_markup
+        )
 
 async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Collects user issue details and notifies the admin group."""
