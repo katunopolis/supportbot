@@ -32,7 +32,7 @@ WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 
 # 🔹 Initialize Telegram Bot Application (Only once)
 bot_app = Application.builder().token(TOKEN).build()
-bot_app.initialize()  # ✅ Explicitly initialize the bot
+await bot_app.initialize()  # ✅ Ensure it is awaited
 
 # ✅ **Root Route (For health check)**
 @fastapi_app.get("/")
@@ -173,23 +173,25 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #  ✅ FASTAPI LIFESPAN (STARTUP & SHUTDOWN)
 # ===============================
 
-@fastapi_app.on_event("startup")
-async def startup():
-    """Initialize bot and set webhook asynchronously."""
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handles startup & shutdown tasks using FastAPI lifespan."""
+    print("[INFO] Initializing bot on startup...")
     init_db()
     await set_webhook()
+    await bot_app.initialize()  # ✅ Ensure bot initializes correctly
     print("[INFO] Webhook set successfully.")
-
-@fastapi_app.on_event("shutdown")
-async def shutdown():
-    """Remove Telegram webhook on shutdown to prevent stale webhooks."""
+    yield
+    print("[INFO] Cleaning up bot on shutdown...")
     from telegram import Bot
-    try:
-        bot = Bot(token=TOKEN)
-        await bot.delete_webhook()
-        print("[INFO] Webhook removed successfully.")
-    except Exception as e:
-        print(f"[ERROR] Failed to remove webhook on shutdown: {e}")
+    bot = Bot(token=TOKEN)
+    await bot.delete_webhook()
+    print("[INFO] Webhook removed. Bot shutting down.")
+
+# ✅ Attach lifespan to FastAPI
+fastapi_app = FastAPI(lifespan=lifespan)
 
 # ===============================
 #  ✅ MAIN FUNCTION
