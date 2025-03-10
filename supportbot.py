@@ -32,6 +32,7 @@ WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 
 # 🔹 Initialize Telegram Bot Application (Only once)
 bot_app = Application.builder().token(TOKEN).build()
+bot_app.initialize()  # ✅ Explicitly initialize the bot
 
 # ✅ **Root Route (For health check)**
 @fastapi_app.get("/")
@@ -43,6 +44,10 @@ async def root():
 async def webhook(update: dict):
     """Handles incoming Telegram updates via webhook."""
     try:
+        if not bot_app.running:  # ✅ Ensure bot is initialized
+            print("[INFO] Initializing bot before processing webhook...")
+            await bot_app.initialize()
+
         update = Update.de_json(update, bot_app.bot)
         await bot_app.process_update(update)
         return JSONResponse(content={"status": "ok"})
