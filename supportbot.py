@@ -24,7 +24,6 @@ print(f"Bot Token Loaded: {TOKEN[:5]}********")  # Obfuscate token for security
 ADMIN_GROUP_ID = -4771220922
 
 # 🔹 Root endpoint to confirm the app is running
-
 @fastapi_app.get("/")
 async def root():
     return {"message": "Telegram Support Bot API is running!"}
