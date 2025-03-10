@@ -7,10 +7,17 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
+from fastapi import FastAPI
 import telegram  # for catching Forbidden
 import sqlite3
 import os
 import uvicorn
+
+# Create FastAPI instance
+fastapi_app = FastAPI()
+
+# Create Telegram bot instance
+bot_app = Application.builder().token(TOKEN).build()
 
 # Webhook URL
 WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
@@ -352,28 +359,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-    app = Application.builder().token(TOKEN).build()
+    
+    # Initialize bot application
+    bot_app = Application.builder().token(TOKEN).build()
 
-    # Command Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("request", request_support))
-    app.add_handler(CommandHandler("solved", solved))
-    app.add_handler(CommandHandler("get_chat_id", get_chat_id))
-    app.add_handler(CommandHandler("test_admin", test_admin_message))
-
-    # The user can type the issue or solution.
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_issue), 0)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_solution), 1)
-
-    # Callback Button Handler
-    app.add_handler(CallbackQueryHandler(button_handler))
+    # Add handlers to bot_app
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CommandHandler("request", request_support))
+    bot_app.add_handler(CommandHandler("solved", solved))
+    bot_app.add_handler(CommandHandler("get_chat_id", get_chat_id))
+    bot_app.add_handler(CommandHandler("test_admin", test_admin_message))
+    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_issue))
+    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_solution))
+    bot_app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Setting webhook...")
     import asyncio
-    asyncio.run(set_webhook())  # Sets webhook at bot startup
+    asyncio.run(set_webhook())  # Set Telegram bot webhook
 
     print("Bot is running on webhook...")
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
 
 if __name__ == "__main__":
     main()
