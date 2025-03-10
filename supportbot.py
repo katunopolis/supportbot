@@ -149,7 +149,7 @@ async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /request command from the public group by opening a Web App."""
     user_id = update.message.from_user.id
     # Instead of prompting text, we now open the web app:
-    webapp_url = "webapp-support-bot-production.up.railway.app"  # Replace with your actual web app URL
+    webapp_url = "https://webapp-support-bot-production.up.railway.app/"  # Replace with your actual web app URL
     keyboard = [[InlineKeyboardButton("Open Support Form", web_app=WebAppInfo(url=webapp_url))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
