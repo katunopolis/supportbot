@@ -10,6 +10,16 @@ from telegram.ext import (
 import telegram  # for catching Forbidden
 import sqlite3
 import os
+import uvicorn
+
+# Webhook URL
+WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
+
+async def set_webhook():
+    """Set the webhook for the bot."""
+    from telegram import Bot
+    bot = Bot(token=TOKEN)
+    await bot.set_webhook(WEBHOOK_URL)
 
 # Telegram Bot Token
 TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
@@ -358,8 +368,12 @@ def main():
     # Callback Button Handler
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot is running...")
-    app.run_polling()
+    print("Setting webhook...")
+    import asyncio
+    asyncio.run(set_webhook())  # Sets webhook at bot startup
+
+    print("Bot is running on webhook...")
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 
 if __name__ == "__main__":
     main()
