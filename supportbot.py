@@ -8,7 +8,6 @@ import telegram  # Catching Forbidden errors
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from fastapi.lifespan import Lifespan
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -139,7 +138,7 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor = conn.cursor()
         cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
         conn.commit()
-        request_id = cursor.lastrowid
+        request_id = cursor.lastrowid  # ✅ Define request_id properly
         conn.close()
 
         # Build Admin Group Message with Action Buttons
