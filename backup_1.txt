@@ -1,0 +1,199 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import sqlite3
+import os
+
+# Telegram Bot Token
+
+TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
+
+if not TOKEN:
+    raise ValueError("Error: SUPPORT_BOT_TOKEN is not set. Please set it in your environment variables.")
+
+print(f"Bot Token Loaded: {TOKEN[:5]}********")  # Prints only part of the token for security
+
+# Admin Group Chat ID
+
+ADMIN_GROUP_ID = -4771220922
+
+# Test Users for functionality testing
+
+TEST_USERS = [testuser1, testuser2, testuser3]  # Replace with real/fake user IDs
+
+
+# Database setup
+def init_db():
+    conn = sqlite3.connect("support_requests.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            issue TEXT,
+            assigned_admin INTEGER DEFAULT NULL,
+            status TEXT DEFAULT 'Open',
+            solution TEXT DEFAULT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Test sending a message manually 
+
+async def test_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await context.bot.send_message(ADMIN_GROUP_ID, "Test message from bot!")
+        print("[DEBUG] Successfully sent test message to Admin Group")
+    except Exception as e:
+        print(f"[ERROR] Failed to send test message: {e}")
+
+# Get the Admin Group Chat ID
+
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    await update.message.reply_text(f"Chat ID: {chat_id}")
+    print(f"[DEBUG] Admin Group ID: {chat_id}")  # This prints it in the terminal
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome! Use /request in the group to get support.")
+
+async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /request command from the public group"""
+    user_id = update.message.from_user.id
+    chat_id = update.message.chat_id
+
+    if update.message.chat.type != "private":
+        await context.bot.send_message(user_id, "Please check your private messages.")
+        await context.bot.send_message(chat_id, f"@{update.message.from_user.username}, check your private messages.")
+    
+    await context.bot.send_message(user_id, "Please describe the issue you're facing:")
+
+    # Store user ID for tracking
+    context.user_data["requesting_support"] = True
+
+async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles user responses to collect issue details"""
+    if context.user_data.get("requesting_support"):
+        user_id = update.message.from_user.id
+        issue_description = update.message.text
+
+        print(f"[DEBUG] Received issue from user {user_id}: {issue_description}")  # Debugging
+
+        # Save issue to the database
+        conn = sqlite3.connect("support_requests.db")
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
+        conn.commit()
+        request_id = cursor.lastrowid
+        conn.close()
+
+        print(f"[DEBUG] Saved request #{request_id} to the database")  # Debugging
+
+        # Notify Admin Group
+        keyboard = [[InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        try:
+            await context.bot.send_message(
+                ADMIN_GROUP_ID,  # Use the correct global variable
+                f"📌 **New Support Request #{request_id}**\n\n"
+                f"🔹 **User ID:** `{user_id}`\n"
+                f"📄 **Issue:** {issue_description}",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            print(f"[DEBUG] Sent request #{request_id} to Admin Group")  # Debugging
+        except Exception as e:
+            print(f"[ERROR] Failed to send message to Admin Group: {e}")
+
+        await update.message.reply_text("✅ Your request has been submitted. A support admin will reach out soon.")
+
+        context.user_data["requesting_support"] = False
+
+async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles admin assignment when they click 'Assign to me'"""
+    query = update.callback_query
+    admin_id = query.from_user.id
+    request_id = int(query.data.split("_")[1])
+
+    conn = sqlite3.connect("support_requests.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE requests SET assigned_admin = ?, status = 'Assigned' WHERE id = ?", (admin_id, request_id))
+    conn.commit()
+
+    # Fetch user ID to add admin to private chat
+    cursor.execute("SELECT user_id FROM requests WHERE id = ?", (request_id,))
+    user = cursor.fetchone()
+    conn.close()  # Close connection AFTER fetching data
+
+    if user:
+        user_id = user[0]
+        await query.answer("You have been assigned to this request.")
+        await query.edit_message_text(f"Request #{request_id} has been assigned to {query.from_user.username}.")
+        await context.bot.send_message(user_id, f"A support admin (@{query.from_user.username}) has been assigned to your request.")
+    else:
+        await query.answer("Error: Could not find the request in the database.")
+
+async def solved(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles marking a request as solved"""
+    user_id = update.message.from_user.id
+
+    conn = sqlite3.connect("support_requests.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM requests WHERE user_id = ? AND status = 'Assigned'", (user_id,))
+    request = cursor.fetchone()
+
+    if request:
+        request_id = request[0]
+        await update.message.reply_text("Please provide a short description of the solution:")
+        context.user_data["solving_request"] = request_id
+    else:
+        await update.message.reply_text("No active support requests found.")
+
+async def save_solution(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles saving the solution description"""
+    if "solving_request" in context.user_data:
+        request_id = context.user_data["solving_request"]
+        solution = update.message.text
+
+        conn = sqlite3.connect("support_requests.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE requests SET status = 'Solved', solution = ? WHERE id = ?", (solution, request_id))
+        conn.commit()
+        conn.close()
+
+        # Notify admin group
+        await context.bot.send_message(ADMIN_GROUP_ID, f"Request #{request_id} has been marked as Solved.\nSolution: {solution}")
+
+        await update.message.reply_text("Your request has been marked as solved. Thank you!")
+        context.user_data.pop("solving_request", None)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles inline button clicks"""
+    query = update.callback_query
+    if query.data.startswith("assign_"):
+        await assign_request(update, context)
+
+def main():
+    init_db()
+    app = Application.builder().token(TOKEN).build()
+
+    # Command Handlers
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("request", request_support))
+    app.add_handler(CommandHandler("solved", solved))
+    app.add_handler(CommandHandler("get_chat_id", get_chat_id))
+    app.add_handler(CommandHandler("test_admin", test_admin_message))
+
+    # Message Handlers
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_issue))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_solution))
+
+    # Callback Button Handler
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
