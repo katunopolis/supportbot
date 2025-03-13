@@ -9,7 +9,7 @@ import uvicorn
 import logging
 from datetime import datetime
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
@@ -179,6 +179,16 @@ async def support_request_handler(payload: dict):
         # Create web app URL with request ID
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
         
+        # Send stand-by message to user
+        await bot_app.bot.send_message(
+            user_id,
+            "✅ Your support request has been received!\n\n"
+            "An admin will be with you shortly. Please stand by...",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Open Support Chat", url=webapp_url)
+            ]])
+        )
+        
         # Build Admin Group Message with Action Buttons
         buttons = [
             [InlineKeyboardButton("Open Support Chat", url=webapp_url)],
@@ -204,6 +214,15 @@ async def support_request_handler(payload: dict):
         return JSONResponse(content={"message": str(e)}, status_code=500)
 
 @fastapi_app.get("/chat/{request_id}")
+async def get_chat_page(request_id: int):
+    """Serve the chat page for a specific support request."""
+    try:
+        return FileResponse("chat.html")
+    except Exception as e:
+        logging.error(f"Error serving chat page: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@fastapi_app.get("/api/chat/{request_id}")
 async def get_chat_messages(request_id: int):
     """Get all messages for a specific support request."""
     try:
