@@ -6,6 +6,8 @@ import os
 import sqlite3
 import telegram  # Catching Forbidden errors
 import uvicorn
+import logging
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -15,18 +17,28 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes
 )
 
+# Set up logging
+logging.basicConfig(
+    filename='bot.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 # 🔹 Load Telegram Bot Token from environment
 TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Error: SUPPORT_BOT_TOKEN is not set. Please add it to environment variables.")
 
-print(f"Bot Token Loaded: {TOKEN[:5]}********")  # Obfuscate token for security
+logging.info(f"Bot Token Loaded: {TOKEN[:5]}********")  # Obfuscate token for security
 
 # 🔹 Admin Group Chat ID (Change this to your actual admin group)
 ADMIN_GROUP_ID = -4771220922
 
 # 🔹 Webhook URL (Update this based on Railway deployment)
 WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
+
+# 🔹 Web App URL with version parameter
+WEBAPP_URL = "https://webapp-support-bot-production.up.railway.app/?v=" + datetime.now().strftime("%Y%m%d%H%M%S")
 
 # 🔹 Initialize Telegram Bot Application (Only once)
 bot_app = Application.builder().token(TOKEN).build()
@@ -38,52 +50,52 @@ bot_app = Application.builder().token(TOKEN).build()
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: initialize DB, set webhook, and initialize bot on startup; remove webhook on shutdown."""
     # Startup tasks
-    print("[INFO] Starting up: Initializing database...")
+    logging.info("[INFO] Starting up: Initializing database...")
     init_db()
     
-    print("[INFO] Initializing bot application...")
+    logging.info("[INFO] Initializing bot application...")
     await bot_app.initialize()
     
-    print("[INFO] Setting webhook...")
+    logging.info("[INFO] Setting webhook...")
     try:
         from telegram import Bot
         bot = Bot(token=TOKEN)
         # First, delete any existing webhook
         await bot.delete_webhook()
-        print("[INFO] Existing webhook removed.")
+        logging.info("[INFO] Existing webhook removed.")
         
         # Then set the new webhook
         success = await bot.set_webhook(WEBHOOK_URL)
         if success:
-            print("[INFO] Webhook set successfully.")
+            logging.info("[INFO] Webhook set successfully.")
             # Verify webhook status
             webhook_info = await bot.get_webhook_info()
-            print(f"[INFO] Webhook info: {webhook_info}")
+            logging.info(f"[INFO] Webhook info: {webhook_info}")
         else:
-            print("[WARNING] Webhook request sent, but Telegram did not confirm.")
+            logging.warning("[WARNING] Webhook request sent, but Telegram did not confirm.")
     except Exception as e:
-        print(f"[ERROR] Failed to set webhook: {e}")
+        logging.error(f"[ERROR] Failed to set webhook: {e}")
         # Don't raise the exception, let the app start anyway
     
-    print("[INFO] Startup complete: Bot initialized and webhook set.")
+    logging.info("[INFO] Startup complete: Bot initialized and webhook set.")
     
     yield
     
     # Shutdown tasks
-    print("[INFO] Shutting down: Cleaning up...")
+    logging.info("[INFO] Shutting down: Cleaning up...")
     try:
         # Remove webhook
         from telegram import Bot
         bot = Bot(token=TOKEN)
         await bot.delete_webhook()
-        print("[INFO] Webhook removed successfully.")
+        logging.info("[INFO] Webhook removed successfully.")
         
         # Stop the bot application
         await bot_app.stop()
-        print("[INFO] Bot application stopped.")
+        logging.info("[INFO] Bot application stopped.")
         
     except Exception as e:
-        print(f"[ERROR] Error during shutdown: {e}")
+        logging.error(f"[ERROR] Error during shutdown: {e}")
 
 # Attach lifespan to FastAPI app
 fastapi_app = FastAPI(lifespan=lifespan)
@@ -279,6 +291,27 @@ async def send_message(request_id: int, payload: dict):
         print(f"[ERROR] Error sending message: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
+@fastapi_app.get("/logs")
+async def get_logs():
+    """Get the last 100 lines of the log file."""
+    try:
+        with open('bot.log', 'r') as f:
+            # Read the last 100 lines
+            lines = f.readlines()[-100:]
+            return {"logs": lines}
+    except Exception as e:
+        return {"error": str(e)}
+
+@fastapi_app.post("/webapp-log")
+async def webapp_log(log_data: dict):
+    """Receive logs from the web app."""
+    try:
+        logging.info(f"WebApp Log: {log_data}")
+        return {"status": "ok"}
+    except Exception as e:
+        logging.error(f"Error saving webapp log: {e}")
+        return {"status": "error", "message": str(e)}
+
 # -------------------------------
 # DATABASE SETUP & UTILITIES
 # -------------------------------
@@ -342,9 +375,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /request command from the public group by opening a Web App."""
     user_id = update.message.from_user.id
-    # Instead of prompting text, we now open the web app:
-    webapp_url = "https://webapp-support-bot-production.up.railway.app/"  # Replace with your actual web app URL
-    keyboard = [[InlineKeyboardButton("Open Support Form", web_app=WebAppInfo(url=webapp_url))]]
+    logging.info(f"User {user_id} requested support")
+    
+    # Use the versioned web app URL
+    keyboard = [[InlineKeyboardButton("Open Support Form", web_app=WebAppInfo(url=WEBAPP_URL))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Send the message with the Web App button
