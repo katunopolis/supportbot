@@ -5,5 +5,5 @@ buildCommand = "pip install -r requirements.txt"
 [deploy]
 startCommand = "python supportbot.py"
 healthcheckPath = "/health"
-healthcheckTimeout = 100
+healthcheckTimeout = 300
 restartPolicyType = "on_failure"

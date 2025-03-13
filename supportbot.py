@@ -89,6 +89,24 @@ async def root():
     """Health check endpoint."""
     return {"message": "Telegram Support Bot API is running!"}
 
+@fastapi_app.get("/health")
+async def health_check():
+    """Health check endpoint that verifies webhook status."""
+    try:
+        from telegram import Bot
+        bot = Bot(token=TOKEN)
+        webhook_info = await bot.get_webhook_info()
+        return {
+            "status": "healthy",
+            "webhook_url": webhook_info.url,
+            "webhook_set": webhook_info.url == WEBHOOK_URL
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
 @fastapi_app.post("/webhook")
 async def webhook(update: dict):
     """Handles incoming Telegram updates via webhook."""
