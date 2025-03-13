@@ -90,7 +90,7 @@ async def create_request(request: SupportRequest):
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/chat/{request_id}/messages")
+@app.get("/chat/{request_id}")
 async def get_chat_messages(request_id: int):
     """Get all messages for a specific support request."""
     try:
