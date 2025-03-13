@@ -38,7 +38,7 @@ ADMIN_GROUP_ID = -4771220922
 WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 
 # 🔹 Web App URL with version parameter
-WEBAPP_URL = f"https://supportbot-production-b784.up.railway.app/?v={datetime.now().strftime('%Y%m%d%H%M%S')}&r={os.urandom(4).hex()}"
+WEBAPP_URL = f"https://webapp-support-bot-production.up.railway.app/?v={datetime.now().strftime('%Y%m%d%H%M%S')}&r={os.urandom(4).hex()}"
 
 # 🔹 Initialize Telegram Bot Application (Only once)
 bot_app = Application.builder().token(TOKEN).build()
@@ -119,7 +119,7 @@ fastapi_app.add_middleware(
 async def root():
     """Serve the support request form."""
     try:
-        return FileResponse("webapp-support-bot/index.html")
+        return JSONResponse(content={"message": "Telegram Support Bot API is running!"})
     except Exception as e:
         logging.error(f"Error serving index page: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -197,7 +197,7 @@ async def support_request_handler(payload: dict):
                 return JSONResponse(content={"error": "Failed to create request"}, status_code=500)
         
         # Create web app URL with request ID
-        webapp_url = f"https://supportbot-production-b784.up.railway.app/chat/{request_id}"
+        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
         
         # Send stand-by message to user
         await bot_app.bot.send_message(
@@ -240,7 +240,7 @@ async def support_request_handler(payload: dict):
 async def get_chat_page(request_id: int):
     """Serve the chat page for a specific support request."""
     try:
-        return FileResponse("webapp-support-bot/chat.html")
+        return JSONResponse(content={"message": "Chat endpoint - redirecting to web app"})
     except Exception as e:
         logging.error(f"Error serving chat page: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -312,7 +312,7 @@ async def send_message(request_id: int, payload: dict):
             user_id, assigned_admin = request
             
             # Create web app URL
-            webapp_url = f"https://supportbot-production-b784.up.railway.app/chat/{request_id}"
+            webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
             
             # Notify the other party (user or admin) via Telegram
             if sender_type == "admin":
