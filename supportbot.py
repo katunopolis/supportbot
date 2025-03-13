@@ -179,16 +179,33 @@ async def support_request_handler(payload: dict):
         # Create web app URL with request ID
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
         
-        # Notify admin group with web app button
-        keyboard = [[InlineKeyboardButton("Open Support Chat", web_app=WebAppInfo(url=webapp_url))]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await bot_app.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
+        try:
+            # Notify admin group with web app button
+            keyboard = [[
+                InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url)
+                )
+            ]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await bot_app.bot.send_message(
+                ADMIN_GROUP_ID,
+                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logging.error(f"Error sending WebApp button to admin: {e}")
+            # Fallback to URL button
+            keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await bot_app.bot.send_message(
+                ADMIN_GROUP_ID,
+                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
         
         return JSONResponse(content={
             "message": "Support request submitted successfully",
@@ -196,7 +213,7 @@ async def support_request_handler(payload: dict):
             "chat_url": webapp_url
         })
     except Exception as e:
-        print(f"[ERROR] Support request error: {e}")
+        logging.error(f"Support request error: {e}")
         return JSONResponse(content={"message": str(e)}, status_code=500)
 
 @fastapi_app.get("/chat/{request_id}")
@@ -265,30 +282,65 @@ async def send_message(request_id: int, payload: dict):
             
             user_id, assigned_admin = request
             
+            # Create web app URL
+            webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
+            
             # Notify the other party (user or admin) via Telegram
             if sender_type == "admin":
                 # Notify user
-                await bot_app.bot.send_message(
-                    user_id,
-                    f"💬 New message from support:\n{message}",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("Open Chat", web_app=WebAppInfo(url=f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"))
-                    ]])
-                )
+                try:
+                    keyboard = [[
+                        InlineKeyboardButton(
+                            text="Open Chat",
+                            web_app=WebAppInfo(url=webapp_url)
+                        )
+                    ]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await bot_app.bot.send_message(
+                        user_id,
+                        f"💬 New message from support:\n{message}",
+                        reply_markup=reply_markup
+                    )
+                except Exception as e:
+                    logging.error(f"Error sending WebApp button to user: {e}")
+                    # Fallback to URL button
+                    keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await bot_app.bot.send_message(
+                        user_id,
+                        f"💬 New message from support:\n{message}",
+                        reply_markup=reply_markup
+                    )
             else:
                 # Notify admin
                 if assigned_admin:
-                    await bot_app.bot.send_message(
-                        assigned_admin,
-                        f"💬 New message from user:\n{message}",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("Open Chat", web_app=WebAppInfo(url=f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"))
-                        ]])
-                    )
+                    try:
+                        keyboard = [[
+                            InlineKeyboardButton(
+                                text="Open Chat",
+                                web_app=WebAppInfo(url=webapp_url)
+                            )
+                        ]]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        await bot_app.bot.send_message(
+                            assigned_admin,
+                            f"💬 New message from user:\n{message}",
+                            reply_markup=reply_markup
+                        )
+                    except Exception as e:
+                        logging.error(f"Error sending WebApp button to admin: {e}")
+                        # Fallback to URL button
+                        keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        await bot_app.bot.send_message(
+                            assigned_admin,
+                            f"💬 New message from user:\n{message}",
+                            reply_markup=reply_markup
+                        )
         
         return JSONResponse(content={"message": "Message sent successfully"})
     except Exception as e:
-        print(f"[ERROR] Error sending message: {e}")
+        logging.error(f"Error sending message: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.get("/logs")
@@ -377,17 +429,31 @@ async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     logging.info(f"User {user_id} requested support")
     
-    # Use the versioned web app URL
-    keyboard = [[InlineKeyboardButton("Open Support Form", web_app=WebAppInfo(url=WEBAPP_URL))]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    # Send the message with the Web App button
-    await update.message.reply_text(
-        "Click the button below to open our support form:",
-        reply_markup=reply_markup
-    )
-    # (Optionally, store state if needed)
-    context.user_data[f"requesting_support_{user_id}"] = True
+    try:
+        # Use the versioned web app URL
+        keyboard = [[
+            InlineKeyboardButton(
+                text="Open Support Form",
+                web_app=WebAppInfo(url=WEBAPP_URL)
+            )
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send the message with the Web App button
+        await update.message.reply_text(
+            "Click the button below to open our support form:",
+            reply_markup=reply_markup
+        )
+        context.user_data[f"requesting_support_{user_id}"] = True
+    except Exception as e:
+        logging.error(f"Error creating WebApp button: {e}")
+        # Fallback to URL button if WebApp fails
+        keyboard = [[InlineKeyboardButton("Open Support Form", url=WEBAPP_URL)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Click the button below to open our support form:",
+            reply_markup=reply_markup
+        )
 
 # -------------------------------
 # SUPPORT REQUEST PROCESS
