@@ -38,7 +38,7 @@ ADMIN_GROUP_ID = -4771220922
 WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 
 # 🔹 Web App URL with version parameter
-WEBAPP_URL = "https://webapp-support-bot-production.up.railway.app/?v=" + datetime.now().strftime("%Y%m%d%H%M%S")
+WEBAPP_URL = f"https://webapp-support-bot-production.up.railway.app/?v={datetime.now().strftime('%Y%m%d%H%M%S')}&r={os.urandom(4).hex()}"
 
 # 🔹 Initialize Telegram Bot Application (Only once)
 bot_app = Application.builder().token(TOKEN).build()
