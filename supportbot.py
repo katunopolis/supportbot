@@ -111,26 +111,138 @@ async def support_request_handler(payload: dict):
             cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue))
             conn.commit()
             request_id = cursor.lastrowid
+            
+            # Save initial message
+            cursor.execute("""
+                INSERT INTO messages (request_id, sender_id, sender_type, message)
+                VALUES (?, ?, 'user', ?)
+            """, (request_id, user_id, issue))
+            conn.commit()
         
-        # Optionally, notify the admin group about the new support request:
+        # Create web app URL with request ID
+        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
+        
+        # Notify admin group with web app button
+        keyboard = [[InlineKeyboardButton("Open Support Chat", web_app=WebAppInfo(url=webapp_url))]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await bot_app.bot.send_message(
             ADMIN_GROUP_ID,
             f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+            reply_markup=reply_markup,
             parse_mode="Markdown"
         )
-        return JSONResponse(content={"message": "Support request submitted successfully", "request_id": request_id})
+        
+        return JSONResponse(content={
+            "message": "Support request submitted successfully",
+            "request_id": request_id,
+            "chat_url": webapp_url
+        })
     except Exception as e:
         print(f"[ERROR] Support request error: {e}")
         return JSONResponse(content={"message": str(e)}, status_code=500)
+
+@fastapi_app.get("/chat/{request_id}")
+async def get_chat_messages(request_id: int):
+    """Get all messages for a specific support request."""
+    try:
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT m.*, r.user_id, r.assigned_admin
+                FROM messages m
+                JOIN requests r ON m.request_id = r.id
+                WHERE m.request_id = ?
+                ORDER BY m.timestamp ASC
+            """, (request_id,))
+            messages = cursor.fetchall()
+            
+            if not messages:
+                return JSONResponse(content={"error": "Request not found"}, status_code=404)
+                
+            # Format messages for frontend
+            formatted_messages = []
+            for msg in messages:
+                formatted_messages.append({
+                    "id": msg[0],
+                    "request_id": msg[1],
+                    "sender_id": msg[2],
+                    "sender_type": msg[3],
+                    "message": msg[4],
+                    "timestamp": msg[5],
+                    "user_id": msg[6],
+                    "assigned_admin": msg[7]
+                })
+            
+            return JSONResponse(content={"messages": formatted_messages})
+    except Exception as e:
+        print(f"[ERROR] Error fetching chat messages: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@fastapi_app.post("/chat/{request_id}/message")
+async def send_message(request_id: int, payload: dict):
+    """Send a new message in the support chat."""
+    try:
+        sender_id = payload.get("sender_id")
+        sender_type = payload.get("sender_type")
+        message = payload.get("message")
+        
+        if not all([sender_id, sender_type, message]):
+            return JSONResponse(content={"error": "Missing required fields"}, status_code=400)
+        
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            # Save message
+            cursor.execute("""
+                INSERT INTO messages (request_id, sender_id, sender_type, message)
+                VALUES (?, ?, ?, ?)
+            """, (request_id, sender_id, sender_type, message))
+            conn.commit()
+            
+            # Get request details
+            cursor.execute("SELECT user_id, assigned_admin FROM requests WHERE id = ?", (request_id,))
+            request = cursor.fetchone()
+            
+            if not request:
+                return JSONResponse(content={"error": "Request not found"}, status_code=404)
+            
+            user_id, assigned_admin = request
+            
+            # Notify the other party (user or admin) via Telegram
+            if sender_type == "admin":
+                # Notify user
+                await bot_app.bot.send_message(
+                    user_id,
+                    f"💬 New message from support:\n{message}",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("Open Chat", web_app=WebAppInfo(url=f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"))
+                    ]])
+                )
+            else:
+                # Notify admin
+                if assigned_admin:
+                    await bot_app.bot.send_message(
+                        assigned_admin,
+                        f"💬 New message from user:\n{message}",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("Open Chat", web_app=WebAppInfo(url=f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"))
+                        ]])
+                    )
+        
+        return JSONResponse(content={"message": "Message sent successfully"})
+    except Exception as e:
+        print(f"[ERROR] Error sending message: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 # -------------------------------
 # DATABASE SETUP & UTILITIES
 # -------------------------------
 def init_db():
-    """Initialize SQLite database for storing support requests."""
+    """Initialize SQLite database for storing support requests and messages."""
     try:
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
+            # Create requests table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS requests (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,6 +251,18 @@ def init_db():
                     assigned_admin INTEGER DEFAULT NULL,
                     status TEXT DEFAULT 'Open',
                     solution TEXT DEFAULT NULL
+                )
+            """)
+            # Create messages table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    request_id INTEGER,
+                    sender_id INTEGER,
+                    sender_type TEXT,  -- 'user' or 'admin'
+                    message TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (request_id) REFERENCES requests(id)
                 )
             """)
     except sqlite3.Error as e:
