@@ -37,26 +37,34 @@ bot_app = Application.builder().token(TOKEN).build()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: initialize DB, set webhook, and initialize bot on startup; remove webhook on shutdown."""
-    # Startup tasks:
+    # Startup tasks
     print("[INFO] Starting up: Initializing database...")
     init_db()
     print("[INFO] Setting webhook...")
     await set_webhook()
-    await bot_app.initialize()  # Initialize the Telegram bot
+    await bot_app.initialize()
     print("[INFO] Startup complete: Bot initialized and webhook set.")
+    
     yield
-    # Shutdown tasks:
-    print("[INFO] Shutting down: Removing webhook...")
-    from telegram import Bot
+    
+    # Shutdown tasks
+    print("[INFO] Shutting down: Cleaning up...")
     try:
+        # Remove webhook
+        from telegram import Bot
         bot = Bot(token=TOKEN)
-        success = await bot.delete_webhook()
-        if success:
-            print("[INFO] Webhook removed successfully.")
-        else:
-            print("[WARNING] Webhook removal request sent but not confirmed.")
+        await bot.delete_webhook()
+        print("[INFO] Webhook removed successfully.")
+        
+        # Stop the bot application
+        await bot_app.stop()
+        print("[INFO] Bot application stopped.")
+        
+        # Close any database connections
+        # Add your database cleanup here if needed
+        
     except Exception as e:
-        print(f"[ERROR] Failed to remove webhook on shutdown: {e}")
+        print(f"[ERROR] Error during shutdown: {e}")
 
 # Attach lifespan to FastAPI app
 fastapi_app = FastAPI(lifespan=lifespan)

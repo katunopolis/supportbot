@@ -143,6 +143,24 @@ async def send_message(request_id: int, message: ChatMessage):
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint that verifies webhook status."""
+    try:
+        from telegram import Bot
+        bot = Bot(token=TOKEN)
+        webhook_info = await bot.get_webhook_info()
+        return {
+            "status": "healthy",
+            "webhook_url": webhook_info.url,
+            "webhook_set": webhook_info.url == WEBHOOK_URL
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
