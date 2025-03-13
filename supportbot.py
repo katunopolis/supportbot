@@ -179,33 +179,20 @@ async def support_request_handler(payload: dict):
         # Create web app URL with request ID
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
         
-        try:
-            # Notify admin group with web app button
-            keyboard = [[
-                InlineKeyboardButton(
-                    text="Open Support Chat",
-                    web_app=WebAppInfo(url=webapp_url)
-                )
-            ]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await bot_app.bot.send_message(
-                ADMIN_GROUP_ID,
-                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
-        except Exception as e:
-            logging.error(f"Error sending WebApp button to admin: {e}")
-            # Fallback to URL button
-            keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await bot_app.bot.send_message(
-                ADMIN_GROUP_ID,
-                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
+        # Build Admin Group Message with Action Buttons
+        buttons = [
+            [InlineKeyboardButton("Open Support Chat", url=webapp_url)],
+            [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
+            [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(buttons)
+        
+        await bot_app.bot.send_message(
+            ADMIN_GROUP_ID,
+            f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
         
         return JSONResponse(content={
             "message": "Support request submitted successfully",
@@ -287,56 +274,24 @@ async def send_message(request_id: int, payload: dict):
             
             # Notify the other party (user or admin) via Telegram
             if sender_type == "admin":
-                # Notify user
-                try:
-                    keyboard = [[
-                        InlineKeyboardButton(
-                            text="Open Chat",
-                            web_app=WebAppInfo(url=webapp_url)
-                        )
-                    ]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    await bot_app.bot.send_message(
-                        user_id,
-                        f"💬 New message from support:\n{message}",
-                        reply_markup=reply_markup
-                    )
-                except Exception as e:
-                    logging.error(f"Error sending WebApp button to user: {e}")
-                    # Fallback to URL button
+                # Notify user with URL button
+                keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await bot_app.bot.send_message(
+                    user_id,
+                    f"💬 New message from support:\n{message}",
+                    reply_markup=reply_markup
+                )
+            else:
+                # Notify admin with URL button
+                if assigned_admin:
                     keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await bot_app.bot.send_message(
-                        user_id,
-                        f"💬 New message from support:\n{message}",
+                        assigned_admin,
+                        f"💬 New message from user:\n{message}",
                         reply_markup=reply_markup
                     )
-            else:
-                # Notify admin
-                if assigned_admin:
-                    try:
-                        keyboard = [[
-                            InlineKeyboardButton(
-                                text="Open Chat",
-                                web_app=WebAppInfo(url=webapp_url)
-                            )
-                        ]]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        await bot_app.bot.send_message(
-                            assigned_admin,
-                            f"💬 New message from user:\n{message}",
-                            reply_markup=reply_markup
-                        )
-                    except Exception as e:
-                        logging.error(f"Error sending WebApp button to admin: {e}")
-                        # Fallback to URL button
-                        keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        await bot_app.bot.send_message(
-                            assigned_admin,
-                            f"💬 New message from user:\n{message}",
-                            reply_markup=reply_markup
-                        )
         
         return JSONResponse(content={"message": "Message sent successfully"})
     except Exception as e:
