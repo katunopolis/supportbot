@@ -318,14 +318,36 @@ async def send_message(request_id: int, payload: dict):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.get("/logs")
-async def get_logs():
-    """Get the last 100 lines of the log file."""
+async def get_logs(limit: int = 100, level: str = None):
+    """Get logs from the database with optional filtering."""
     try:
-        with open('bot.log', 'r') as f:
-            # Read the last 100 lines
-            lines = f.readlines()[-100:]
-            return {"logs": lines}
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            query = "SELECT timestamp, level, message FROM logs"
+            params = []
+            
+            if level:
+                query += " WHERE level = ?"
+                params.append(level)
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            logs = cursor.fetchall()
+            
+            return {
+                "logs": [
+                    {
+                        "timestamp": log[0],
+                        "level": log[1],
+                        "message": log[2]
+                    }
+                    for log in logs
+                ]
+            }
     except Exception as e:
+        logging.error(f"Error fetching logs: {e}")
         return {"error": str(e)}
 
 @fastapi_app.post("/webapp-log")
@@ -369,8 +391,62 @@ def init_db():
                     FOREIGN KEY (request_id) REFERENCES requests(id)
                 )
             """)
+            # Create logs table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    level TEXT,
+                    message TEXT,
+                    context TEXT
+                )
+            """)
     except sqlite3.Error as e:
         print(f"[ERROR] Database error: {e}")
+
+# Custom logging handler to store logs in database
+class DatabaseLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            with sqlite3.connect("support_requests.db") as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO logs (timestamp, level, message, context)
+                    VALUES (?, ?, ?, ?)
+                """, (
+                    datetime.fromtimestamp(record.created).isoformat(),
+                    record.levelname,
+                    record.getMessage(),
+                    str(record.__dict__)
+                ))
+                conn.commit()
+        except Exception:
+            self.handleError(record)
+
+# Set up logging with both file and database handlers
+def setup_logging():
+    """Set up logging with both file and database handlers."""
+    # Create formatters
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # File handler with rotation
+    file_handler = logging.handlers.RotatingFileHandler(
+        'bot.log',
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setFormatter(formatter)
+    
+    # Database handler
+    db_handler = DatabaseLogHandler()
+    db_handler.setFormatter(formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(db_handler)
 
 async def set_webhook():
     """Sets Telegram bot webhook for handling messages via FastAPI."""
@@ -514,6 +590,9 @@ def main():
 
     print("🚀 Bot is running on webhook mode...")
     uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
+
+# Initialize logging at startup
+setup_logging()
 
 if __name__ == "__main__":
     main()
