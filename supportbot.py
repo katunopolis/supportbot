@@ -165,9 +165,19 @@ async def support_request_handler(payload: dict):
         # Save issue to the database
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
+            
+            # First, get the current max request ID
+            cursor.execute("SELECT MAX(id) FROM requests")
+            current_max_id = cursor.fetchone()[0] or 0
+            logging.info(f"Current max request ID: {current_max_id}")
+            
+            # Insert new request
             cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue))
             conn.commit()
             request_id = cursor.lastrowid
+            
+            # Verify the new request ID
+            logging.info(f"New request ID generated: {request_id}")
             
             # Save initial message
             cursor.execute("""
@@ -175,6 +185,12 @@ async def support_request_handler(payload: dict):
                 VALUES (?, ?, 'user', ?)
             """, (request_id, user_id, issue))
             conn.commit()
+            
+            # Verify the request exists
+            cursor.execute("SELECT id FROM requests WHERE id = ?", (request_id,))
+            if not cursor.fetchone():
+                logging.error(f"Request {request_id} not found after insertion")
+                return JSONResponse(content={"error": "Failed to create request"}, status_code=500)
         
         # Create web app URL with request ID
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
@@ -196,6 +212,9 @@ async def support_request_handler(payload: dict):
             [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(buttons)
+        
+        # Log the admin notification
+        logging.info(f"Sending admin notification for request #{request_id}")
         
         await bot_app.bot.send_message(
             ADMIN_GROUP_ID,
