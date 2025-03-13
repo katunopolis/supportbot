@@ -40,9 +40,31 @@ async def lifespan(app: FastAPI):
     # Startup tasks
     print("[INFO] Starting up: Initializing database...")
     init_db()
-    print("[INFO] Setting webhook...")
-    await set_webhook()
+    
+    print("[INFO] Initializing bot application...")
     await bot_app.initialize()
+    
+    print("[INFO] Setting webhook...")
+    try:
+        from telegram import Bot
+        bot = Bot(token=TOKEN)
+        # First, delete any existing webhook
+        await bot.delete_webhook()
+        print("[INFO] Existing webhook removed.")
+        
+        # Then set the new webhook
+        success = await bot.set_webhook(WEBHOOK_URL)
+        if success:
+            print("[INFO] Webhook set successfully.")
+            # Verify webhook status
+            webhook_info = await bot.get_webhook_info()
+            print(f"[INFO] Webhook info: {webhook_info}")
+        else:
+            print("[WARNING] Webhook request sent, but Telegram did not confirm.")
+    except Exception as e:
+        print(f"[ERROR] Failed to set webhook: {e}")
+        # Don't raise the exception, let the app start anyway
+    
     print("[INFO] Startup complete: Bot initialized and webhook set.")
     
     yield
@@ -59,9 +81,6 @@ async def lifespan(app: FastAPI):
         # Stop the bot application
         await bot_app.stop()
         print("[INFO] Bot application stopped.")
-        
-        # Close any database connections
-        # Add your database cleanup here if needed
         
     except Exception as e:
         print(f"[ERROR] Error during shutdown: {e}")
