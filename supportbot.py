@@ -117,8 +117,12 @@ fastapi_app.add_middleware(
 # -------------------------------
 @fastapi_app.get("/")
 async def root():
-    """Health check endpoint."""
-    return {"message": "Telegram Support Bot API is running!"}
+    """Serve the support request form."""
+    try:
+        return FileResponse("webapp-support-bot/index.html")
+    except Exception as e:
+        logging.error(f"Error serving index page: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.get("/health")
 async def health_check():
@@ -236,16 +240,7 @@ async def support_request_handler(payload: dict):
 async def get_chat_page(request_id: int):
     """Serve the chat page for a specific support request."""
     try:
-        # Get the directory where supportbot.py is located
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Construct path to chat.html
-        chat_path = os.path.join(current_dir, "webapp-support-bot", "chat.html")
-        
-        if not os.path.exists(chat_path):
-            logging.error(f"Chat page not found at: {chat_path}")
-            return JSONResponse(content={"error": "Chat page not found"}, status_code=404)
-            
-        return FileResponse(chat_path)
+        return FileResponse("webapp-support-bot/chat.html")
     except Exception as e:
         logging.error(f"Error serving chat page: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -387,6 +382,24 @@ async def webapp_log(log_data: dict):
     except Exception as e:
         logging.error(f"Error saving webapp log: {e}")
         return {"status": "error", "message": str(e)}
+
+@fastapi_app.get("/api/health")
+async def health_check():
+    """Health check endpoint that verifies webhook status."""
+    try:
+        from telegram import Bot
+        bot = Bot(token=TOKEN)
+        webhook_info = await bot.get_webhook_info()
+        return {
+            "status": "healthy",
+            "webhook_url": webhook_info.url,
+            "webhook_set": webhook_info.url == WEBHOOK_URL
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
 
 # -------------------------------
 # DATABASE SETUP & UTILITIES
