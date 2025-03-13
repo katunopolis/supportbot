@@ -7,3 +7,7 @@ startCommand = "python supportbot.py"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
+
+# Include webapp-support-bot directory in deployment
+[deploy.include]
+paths = ["webapp-support-bot/**"]

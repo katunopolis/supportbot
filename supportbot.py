@@ -217,7 +217,16 @@ async def support_request_handler(payload: dict):
 async def get_chat_page(request_id: int):
     """Serve the chat page for a specific support request."""
     try:
-        return FileResponse("chat.html")
+        # Get the directory where supportbot.py is located
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # Construct path to chat.html
+        chat_path = os.path.join(current_dir, "webapp-support-bot", "chat.html")
+        
+        if not os.path.exists(chat_path):
+            logging.error(f"Chat page not found at: {chat_path}")
+            return JSONResponse(content={"error": "Chat page not found"}, status_code=404)
+            
+        return FileResponse(chat_path)
     except Exception as e:
         logging.error(f"Error serving chat page: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
