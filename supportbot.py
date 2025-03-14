@@ -249,6 +249,7 @@ async def get_chat_page(request_id: int):
 async def get_chat_messages(request_id: int):
     """Get all messages for a specific support request."""
     try:
+        logging.info(f"Fetching messages for request #{request_id}")
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -261,6 +262,7 @@ async def get_chat_messages(request_id: int):
             messages = cursor.fetchall()
             
             if not messages:
+                logging.warning(f"No messages found for request #{request_id}")
                 return JSONResponse(content={"error": "Request not found"}, status_code=404)
                 
             # Format messages for frontend
@@ -277,20 +279,23 @@ async def get_chat_messages(request_id: int):
                     "assigned_admin": msg[7]
                 })
             
+            logging.info(f"Found {len(formatted_messages)} messages for request #{request_id}")
             return JSONResponse(content={"messages": formatted_messages})
     except Exception as e:
-        print(f"[ERROR] Error fetching chat messages: {e}")
+        logging.error(f"Error fetching chat messages: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.post("/chat/{request_id}/message")
 async def send_message(request_id: int, payload: dict):
     """Send a new message in the support chat."""
     try:
+        logging.info(f"Received message for request #{request_id}: {payload}")
         sender_id = payload.get("sender_id")
         sender_type = payload.get("sender_type")
         message = payload.get("message")
         
         if not all([sender_id, sender_type, message]):
+            logging.error(f"Missing required fields in payload: {payload}")
             return JSONResponse(content={"error": "Missing required fields"}, status_code=400)
         
         with sqlite3.connect("support_requests.db") as conn:
@@ -307,9 +312,11 @@ async def send_message(request_id: int, payload: dict):
             request = cursor.fetchone()
             
             if not request:
+                logging.error(f"Request #{request_id} not found in database")
                 return JSONResponse(content={"error": "Request not found"}, status_code=404)
             
             user_id, assigned_admin = request
+            logging.info(f"Request #{request_id} details: user_id={user_id}, assigned_admin={assigned_admin}")
             
             # Create web app URL
             webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
@@ -324,6 +331,7 @@ async def send_message(request_id: int, payload: dict):
                     f"💬 New message from support:\n{message}",
                     reply_markup=reply_markup
                 )
+                logging.info(f"Sent notification to user {user_id}")
             else:
                 # Notify admin with web app URL
                 if assigned_admin:
@@ -334,7 +342,9 @@ async def send_message(request_id: int, payload: dict):
                         f"💬 New message from user:\n{message}",
                         reply_markup=reply_markup
                     )
+                    logging.info(f"Sent notification to admin {assigned_admin}")
         
+        logging.info(f"Message saved successfully for request #{request_id}")
         return JSONResponse(content={"message": "Message sent successfully"})
     except Exception as e:
         logging.error(f"Error sending message: {e}")
