@@ -314,10 +314,10 @@ async def send_message(request_id: int, payload: dict):
             # Create web app URL
             webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
             
-            # Notify the other party (user or admin) via Telegram
+            # Notify the other party (user or admin) via Telegram with web app URL
             if sender_type == "admin":
-                # Notify user with URL button
-                keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
+                # Notify user with web app URL
+                keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await bot_app.bot.send_message(
                     user_id,
@@ -325,9 +325,9 @@ async def send_message(request_id: int, payload: dict):
                     reply_markup=reply_markup
                 )
             else:
-                # Notify admin with URL button
+                # Notify admin with web app URL
                 if assigned_admin:
-                    keyboard = [[InlineKeyboardButton("Open Chat", url=webapp_url)]]
+                    keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await bot_app.bot.send_message(
                         assigned_admin,
@@ -608,13 +608,15 @@ async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = user[0]
     admin_username = query.from_user.username or "Admin"
-    admin_link = f"https://t.me/{admin_username}" if admin_username else f"tg://user?id={admin_id}"
+    
+    # Create web app URL
+    webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
 
-    # Notify User
+    # Notify User with web app URL
     await context.bot.send_message(
         user_id,
-        f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open a direct chat.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Admin Chat", url=admin_link)]])
+        f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open the chat.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Support Chat", url=webapp_url)]])
     )
     await query.answer("You have been assigned to this request.")
 
