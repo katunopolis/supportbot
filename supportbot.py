@@ -197,25 +197,53 @@ async def support_request_handler(payload: dict):
                 return JSONResponse(content={"error": "Failed to create request"}, status_code=500)
         
         # Create web app URL with request ID
-        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
+        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
         
-        # Send stand-by message to user
-        await bot_app.bot.send_message(
-            user_id,
-            "✅ Your support request has been received!\n\n"
-            "An admin will be with you shortly. Please stand by...",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Open Support Chat", url=webapp_url)
-            ]])
-        )
+        # Send stand-by message to user with WebApp button
+        try:
+            await bot_app.bot.send_message(
+                user_id,
+                "✅ Your support request has been received!\n\n"
+                "An admin will be with you shortly. Please stand by...",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        text="Open Support Chat",
+                        web_app=WebAppInfo(url=webapp_url)
+                    )
+                ]])
+            )
+        except Exception as e:
+            logging.error(f"Failed to send WebApp button to user: {e}")
+            # Fallback to regular URL button
+            await bot_app.bot.send_message(
+                user_id,
+                "✅ Your support request has been received!\n\n"
+                "An admin will be with you shortly. Please stand by...",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Open Support Chat", url=webapp_url)
+                ]])
+            )
         
         # Build Admin Group Message with Action Buttons
-        buttons = [
-            [InlineKeyboardButton("Open Support Chat", url=webapp_url)],
-            [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
-            [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(buttons)
+        try:
+            buttons = [
+                [InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url)
+                )],
+                [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
+                [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(buttons)
+        except Exception as e:
+            logging.error(f"Failed to create WebApp button for admin: {e}")
+            # Fallback to regular URL button
+            buttons = [
+                [InlineKeyboardButton("Open Support Chat", url=webapp_url)],
+                [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
+                [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(buttons)
         
         # Log the admin notification
         logging.info(f"Sending admin notification for request #{request_id}")
@@ -640,14 +668,30 @@ async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_username = query.from_user.username or "Admin"
     
     # Create web app URL
-    webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
+    webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
 
     # Notify User with web app URL
-    await context.bot.send_message(
-        user_id,
-        f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open the chat.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Support Chat", url=webapp_url)]])
-    )
+    try:
+        await context.bot.send_message(
+            user_id,
+            f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open the chat.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url)
+                )
+            ]])
+        )
+    except Exception as e:
+        logging.error(f"Failed to send WebApp button to user after assignment: {e}")
+        # Fallback to regular URL button
+        await context.bot.send_message(
+            user_id,
+            f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open the chat.",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Open Support Chat", url=webapp_url)
+            ]])
+        )
     await query.answer("You have been assigned to this request.")
 
 # -------------------------------
