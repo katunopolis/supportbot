@@ -240,12 +240,29 @@ async def support_request_handler(payload: dict):
 async def get_chat_page(request_id: int):
     """Serve the chat page for a specific support request."""
     try:
-        return JSONResponse(content={"message": "Chat endpoint - redirecting to web app"})
+        logging.info(f"Chat page requested for request #{request_id}")
+        # Get request details to verify it exists
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id FROM requests WHERE id = ?", (request_id,))
+            request = cursor.fetchone()
+            
+            if not request:
+                logging.error(f"Request #{request_id} not found")
+                return JSONResponse(content={"error": "Request not found"}, status_code=404)
+                
+            user_id = request[0]
+            logging.info(f"Found request #{request_id} for user {user_id}")
+            
+            # Add user_id to chat.html URL
+            chat_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
+            logging.info(f"Generated chat URL: {chat_url}")
+            return JSONResponse(content={"chat_url": chat_url})
     except Exception as e:
         logging.error(f"Error serving chat page: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-@fastapi_app.get("/api/chat/{request_id}")
+@fastapi_app.get("/chat/{request_id}/messages")
 async def get_chat_messages(request_id: int):
     """Get all messages for a specific support request."""
     try:
@@ -280,6 +297,7 @@ async def get_chat_messages(request_id: int):
                 })
             
             logging.info(f"Found {len(formatted_messages)} messages for request #{request_id}")
+            logging.debug(f"Messages: {formatted_messages}")
             return JSONResponse(content={"messages": formatted_messages})
     except Exception as e:
         logging.error(f"Error fetching chat messages: {e}")
@@ -306,6 +324,7 @@ async def send_message(request_id: int, payload: dict):
                 VALUES (?, ?, ?, ?)
             """, (request_id, sender_id, sender_type, message))
             conn.commit()
+            logging.info(f"Message saved to database for request #{request_id}")
             
             # Get request details
             cursor.execute("SELECT user_id, assigned_admin FROM requests WHERE id = ?", (request_id,))
@@ -319,7 +338,8 @@ async def send_message(request_id: int, payload: dict):
             logging.info(f"Request #{request_id} details: user_id={user_id}, assigned_admin={assigned_admin}")
             
             # Create web app URL
-            webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}"
+            webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
+            logging.info(f"Generated web app URL: {webapp_url}")
             
             # Notify the other party (user or admin) via Telegram with web app URL
             if sender_type == "admin":
