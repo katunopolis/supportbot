@@ -461,8 +461,23 @@ async def get_logs(limit: int = 100, level: str = None):
 
 @fastapi_app.post("/webapp-log")
 async def webapp_log(log_data: dict):
-    """Receive logs from the web app."""
+    """Receive logs from the web app and store them in the database."""
     try:
+        # Log to database
+        with sqlite3.connect("support_requests.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO logs (timestamp, level, message, context)
+                VALUES (?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(),
+                log_data.get("level", "info"),
+                log_data.get("message", ""),
+                str(log_data.get("context", {}))
+            ))
+            conn.commit()
+        
+        # Also log to file
         logging.info(f"WebApp Log: {log_data}")
         return {"status": "ok"}
     except Exception as e:
