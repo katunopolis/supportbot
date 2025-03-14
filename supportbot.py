@@ -16,6 +16,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes
 )
+import asyncio
 
 # Set up logging
 logging.basicConfig(
@@ -430,9 +431,12 @@ async def send_message(request_id: int, payload: dict):
 async def get_logs(limit: int = 100, level: str = None):
     """Get logs from the database with optional filtering."""
     try:
+        # Add a small delay to ensure fresh data
+        await asyncio.sleep(0.1)
+        
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
-            query = "SELECT timestamp, level, message FROM logs"
+            query = "SELECT timestamp, level, message, context FROM logs"
             params = []
             
             if level:
@@ -445,19 +449,42 @@ async def get_logs(limit: int = 100, level: str = None):
             cursor.execute(query, params)
             logs = cursor.fetchall()
             
-            return {
-                "logs": [
-                    {
-                        "timestamp": log[0],
-                        "level": log[1],
-                        "message": log[2]
-                    }
-                    for log in logs
-                ]
+            # Add cache-busting headers
+            headers = {
+                "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Surrogate-Control": "no-store",
+                "Last-Modified": datetime.now().isoformat()
             }
+            
+            return JSONResponse(
+                content={
+                    "logs": [
+                        {
+                            "timestamp": log[0],
+                            "level": log[1],
+                            "message": log[2],
+                            "context": log[3]
+                        }
+                        for log in logs
+                    ],
+                    "timestamp": datetime.now().isoformat()  # Add current timestamp to response
+                },
+                headers=headers
+            )
     except Exception as e:
         logging.error(f"Error fetching logs: {e}")
-        return {"error": str(e)}
+        return JSONResponse(
+            content={"error": str(e)},
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "Surrogate-Control": "no-store",
+                "Last-Modified": datetime.now().isoformat()
+            }
+        )
 
 @fastapi_app.post("/webapp-log")
 async def webapp_log(log_data: dict):
