@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Bot Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script>
+        // Refresh data every 5 seconds
+        const REFRESH_INTERVAL = 5000;
+
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('/monitoring/api/metrics');
+                const data = await response.json();
+                updateMetrics(data);
+            } catch (error) {
+                console.error('Error fetching metrics:', error);
+            }
+        }
+
+        function updateMetrics(data) {
+            // Update system metrics
+            document.getElementById('cpu').textContent = `${data.system.cpu_percent}%`;
+            document.getElementById('memory').textContent = `${data.system.memory_percent}%`;
+            document.getElementById('uptime').textContent = formatUptime(data.system.uptime_seconds);
+
+            // Update application metrics
+            document.getElementById('avg-response').textContent = 
+                `${data.application.average_response_time.toFixed(3)}s`;
+            document.getElementById('webhook-time').textContent = 
+                `${data.application.webhook_average_time.toFixed(3)}s`;
+            document.getElementById('total-requests').textContent = 
+                data.application.total_requests;
+
+            // Update database metrics
+            document.getElementById('db-connections').textContent = 
+                data.database.active_connections;
+
+            // Update error list
+            const errorList = document.getElementById('error-list');
+            errorList.innerHTML = data.application.recent_errors
+                .map(error => `
+                    <li class="py-2 border-b">
+                        <div class="text-red-600">${error.error}</div>
+                        <div class="text-sm text-gray-500">
+                            ${error.timestamp} - ${error.path}
+                        </div>
+                    </li>
+                `).join('');
+
+            // Update charts
+            updateCharts(data);
+        }
+
+        function updateCharts(data) {
+            // CPU usage chart
+            const cpuTrace = {
+                y: [data.system.cpu_percent],
+                type: 'gauge',
+                mode: 'gauge+number',
+                gauge: {
+                    axis: { range: [0, 100] },
+                    bar: { color: 'rgb(59, 130, 246)' },
+                    steps: [
+                        { range: [0, 50], color: 'rgb(220, 252, 231)' },
+                        { range: [50, 80], color: 'rgb(254, 249, 195)' },
+                        { range: [80, 100], color: 'rgb(254, 226, 226)' }
+                    ]
+                }
+            };
+            Plotly.newPlot('cpu-chart', [cpuTrace], {
+                title: 'CPU Usage',
+                height: 200,
+                margin: { t: 40, b: 0, l: 0, r: 0 }
+            });
+
+            // Memory usage chart
+            const memoryTrace = {
+                y: [data.system.memory_percent],
+                type: 'gauge',
+                mode: 'gauge+number',
+                gauge: {
+                    axis: { range: [0, 100] },
+                    bar: { color: 'rgb(59, 130, 246)' },
+                    steps: [
+                        { range: [0, 50], color: 'rgb(220, 252, 231)' },
+                        { range: [50, 80], color: 'rgb(254, 249, 195)' },
+                        { range: [80, 100], color: 'rgb(254, 226, 226)' }
+                    ]
+                }
+            };
+            Plotly.newPlot('memory-chart', [memoryTrace], {
+                title: 'Memory Usage',
+                height: 200,
+                margin: { t: 40, b: 0, l: 0, r: 0 }
+            });
+        }
+
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            return `${days}d ${hours}h ${minutes}m`;
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchMetrics();
+            setInterval(fetchMetrics, REFRESH_INTERVAL);
+        });
+    </script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8">Support Bot Monitoring Dashboard</h1>
+
+        <!-- System Metrics -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">CPU Usage</h2>
+                <div id="cpu-chart"></div>
+                <div class="text-2xl font-bold text-center" id="cpu">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Memory Usage</h2>
+                <div id="memory-chart"></div>
+                <div class="text-2xl font-bold text-center" id="memory">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Uptime</h2>
+                <div class="text-2xl font-bold" id="uptime">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Database Connections</h2>
+                <div class="text-2xl font-bold" id="db-connections">-</div>
+            </div>
+        </div>
+
+        <!-- Application Metrics -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Average Response Time</h2>
+                <div class="text-2xl font-bold" id="avg-response">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Webhook Processing Time</h2>
+                <div class="text-2xl font-bold" id="webhook-time">-</div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Total Requests</h2>
+                <div class="text-2xl font-bold" id="total-requests">-</div>
+            </div>
+        </div>
+
+        <!-- Recent Errors -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold mb-4">Recent Errors</h2>
+            <ul id="error-list" class="divide-y">
+                <!-- Errors will be inserted here -->
+            </ul>
+        </div>
+    </div>
+</body>
+</html> 
