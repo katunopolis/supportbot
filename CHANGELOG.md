@@ -1,5 +1,75 @@
 # Changelog
 
+## [2024-03-16] - Railway Deployment and Environment Setup
+
+### Added
+- Python 3.11 virtual environment setup and configuration
+- Railway deployment configuration and documentation
+- Health check endpoint for monitoring
+- Enhanced logging system with rotation
+- SSL context configuration for secure connections
+- Comprehensive error handling and recovery
+- Database initialization and management improvements
+- Webhook configuration for Railway deployment
+
+### Fixed
+- Python version compatibility issues
+- Webhook setup and verification process
+- Database connection handling
+- SSL certificate verification
+- Bot initialization sequence
+- Dependency conflicts and version mismatches
+- Log file permissions and rotation issues
+
+### Changed
+- Updated Python runtime to 3.11
+- Enhanced logging format and structure
+- Improved webhook handling and verification
+- Optimized database operations
+- Updated documentation for Railway deployment
+- Restructured project layout for better organization
+- Enhanced error handling and recovery mechanisms
+
+## [Latest] - 2024-03-16
+
+### Added
+- Virtual environment setup with Python 3.11
+- Database initialization and setup
+- Webhook configuration for Railway deployment
+- Bot startup and initialization logging
+- SSL context configuration for secure connections
+- Health check endpoint implementation
+- Comprehensive logging system integration
+
+### Fixed
+- Python version compatibility issues resolved
+- Webhook setup and verification process
+- Database connection handling
+- SSL certificate verification
+- Bot initialization sequence
+
+### Changed
+- Updated Python runtime to 3.11
+- Enhanced logging format and structure
+- Improved webhook handling system
+- Optimized database operations
+- Enhanced error handling and recovery
+
+### Technical Details
+- Location of changes:
+  - Virtual environment setup in `venv/`
+  - Database initialization in `support_requests.db`
+  - Logging configuration in `bot.log`
+  - Bot initialization in `supportbot.py`
+
+- Key components modified:
+  - Python environment configuration
+  - Database schema and initialization
+  - Logging system setup
+  - Webhook configuration
+  - SSL context handling
+  - Error recovery system
+
 ## [Latest] - 2024-03-19
 
 ### Added
@@ -59,4 +129,30 @@
   - CSS structure
   - Platform-specific handling
   - Documentation system
-  - Session management 
+  - Session management
+
+## [0.1.0] - 2024-03-20
+
+### Added
+- Initial setup of the support bot project
+- Created main bot script `supportbot.py` with Telegram bot functionality
+- Added WebApp integration with `index.html` and `chat.html`
+- Implemented support request submission and chat functionality
+- Added database integration for storing support requests and messages
+- Added logging system with both file and database handlers
+- Implemented webhook handling for Telegram updates
+- Added theme support for Telegram WebApp
+- Added error handling and logging for WebApp events
+
+### Fixed
+- Resolved Python version compatibility issues
+- Fixed WebApp button creation and display issues
+- Improved error handling in message sending
+- Enhanced theme handling for different platforms
+
+### Technical Details
+- Using Python 3.11 for compatibility
+- Integrated FastAPI for webhook handling
+- Using SQLite for data storage
+- Implemented proper logging system
+- Added WebApp support with responsive design 

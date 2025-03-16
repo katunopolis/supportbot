@@ -42,7 +42,7 @@ WEBHOOK_URL = "https://supportbot-production-b784.up.railway.app/webhook"
 WEBAPP_URL = f"https://webapp-support-bot-production.up.railway.app/?v={datetime.now().strftime('%Y%m%d%H%M%S')}&r={os.urandom(4).hex()}"
 
 # 🔹 Initialize Telegram Bot Application (Only once)
-bot_app = Application.builder().token(TOKEN).build()
+bot_app = Application.builder().token(TOKEN).job_queue(None).build()
 
 # -------------------------------
 # FASTAPI LIFESPAN (STARTUP & SHUTDOWN)
@@ -611,7 +611,7 @@ def init_db():
     try:
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
-            # Create requests table
+            # Create requests table with proper AUTOINCREMENT
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS requests (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -644,8 +644,11 @@ def init_db():
                     context TEXT
                 )
             """)
+            conn.commit()
+            logging.info("Database initialized successfully")
     except sqlite3.Error as e:
-        print(f"[ERROR] Database error: {e}")
+        logging.error(f"Database initialization error: {e}")
+        raise
 
 # Custom logging handler to store logs in database
 class DatabaseLogHandler(logging.Handler):

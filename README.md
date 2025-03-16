@@ -1,14 +1,76 @@
-# Support Bot Development Notes
+# Telegram Support Bot
+
+A Telegram bot that manages support requests through an interactive WebApp interface. The bot allows users to submit support requests and chat with support staff through a modern, responsive web interface.
+
+## Features
+
+- Support request submission through WebApp
+- Real-time chat between users and support staff
+- Admin panel for support staff
+- Theme support for Telegram WebApp
+- Responsive design for all devices
+- Logging system for tracking issues
+- Database storage for requests and messages
+
+## Requirements
+
+- Python 3.11
+- `python-telegram-bot` library
+- FastAPI
+- SQLite3
+- Additional dependencies in `requirements.txt`
+
+## Installation
+
+1. Install Python 3.11 from [python.org](https://www.python.org/downloads/)
+2. Clone this repository
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Create a `.env` file with your Telegram Bot Token:
+   ```
+   SUPPORT_BOT_TOKEN=your_bot_token_here
+   ```
+
+## Usage
+
+1. Start the bot:
+   ```bash
+   python supportbot.py
+   ```
+2. Add the bot to your Telegram group
+3. Use the `/request` command to submit a support request
+4. Admins can manage requests through the admin interface
 
 ## Project Structure
-- `support-bot/`: Main bot implementation
-  - `supportbot.py`: Core bot functionality and API endpoints
-- `webapp-support-bot/`: Web application
-  - `index.html`: Support request form with comprehensive documentation
-  - `chat.html`: Support chat interface
-- Documentation:
-  - `CHANGELOG.md`: Version history and changes
-  - `README.md`: Development guidelines and documentation
+
+- `supportbot.py` - Main bot script
+- `index.html` - Support request submission WebApp
+- `chat.html` - Support chat WebApp interface
+- `requirements.txt` - Python dependencies
+- `.env` - Environment variables
+- `CHANGELOG.md` - Change history
+- `conversation_history.md` - Development progress
+
+## Development
+
+- Uses FastAPI for webhook handling
+- SQLite for data storage
+- Telegram WebApp for user interface
+- Logging system for debugging
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Key Features
 - Telegram WebApp integration
@@ -141,4 +203,139 @@ Current endpoints:
 - Document error scenarios
 - Track session changes
 - Maintain development history
-- Document pending tasks 
+- Document pending tasks
+
+## Railway Deployment Guide
+
+### Prerequisites
+1. Python 3.11 environment
+2. Railway account
+3. GitHub repository
+4. Bot token from @BotFather
+
+### Deployment Steps
+1. **Environment Setup**
+   ```bash
+   # Create virtual environment
+   py -3.11 -m venv venv
+   
+   # Activate virtual environment
+   # Windows
+   .\venv\Scripts\activate
+   # Linux/MacOS
+   source venv/bin/activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   ```
+
+2. **Railway Configuration**
+   - Connect GitHub repository to Railway
+   - Set environment variables:
+     - `SUPPORT_BOT_TOKEN`
+     - `WEBHOOK_URL`
+   - Deploy application
+   - Verify webhook setup
+
+3. **Verification**
+   - Check health endpoint: `/health`
+   - Verify webhook status
+   - Test bot commands
+   - Monitor logs
+
+### Environment Variables
+```env
+SUPPORT_BOT_TOKEN=your_telegram_bot_token
+WEBHOOK_URL=https://your-railway-app.up.railway.app/webhook
+```
+
+### Monitoring
+- Health check endpoint: `/health`
+- Logs endpoint: `/logs`
+- WebApp logs: `/webapp-log`
+- Database status: Check `support_requests.db`
+
+### Troubleshooting
+1. **Webhook Issues**
+   - Verify SSL certificate
+   - Check Railway URL
+   - Confirm bot token
+   - Monitor webhook logs
+
+2. **Database Issues**
+   - Check permissions
+   - Verify initialization
+   - Monitor disk space
+   - Check connections
+
+3. **Python Environment**
+   - Verify Python 3.11
+   - Check dependencies
+   - Monitor virtual env
+   - Update packages
+
+## Production Setup
+
+### Security
+- SSL certificate verification
+- Secure webhook endpoints
+- Database access control
+- Error logging protection
+
+### Performance
+- Database optimization
+- Log rotation
+- Cache management
+- Request throttling
+
+### Monitoring
+- Health checks
+- Error tracking
+- User activity
+- System resources
+
+### Backup
+- Database backups
+- Log archives
+- Configuration backup
+- Recovery procedures
+
+## System Requirements
+
+### Minimum Requirements
+- Python 3.11+
+- 512MB RAM
+- 1GB storage
+- SSL certificate
+
+### Recommended
+- Python 3.11.5+
+- 1GB RAM
+- 2GB storage
+- Dedicated SSL
+- Monitoring tools
+
+## Support and Maintenance
+
+### Regular Tasks
+1. Monitor logs
+2. Check health status
+3. Verify webhooks
+4. Update dependencies
+5. Backup database
+
+### Emergency Procedures
+1. Check error logs
+2. Verify connections
+3. Restart services
+4. Contact support
+5. Restore backups
+
+## Contact
+
+For deployment issues or support:
+1. Check logs at `/logs`
+2. Monitor health at `/health`
+3. Review webhook status
+4. Contact maintainers
+5. Submit issue ticket 
