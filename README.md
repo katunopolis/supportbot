@@ -1,64 +1,102 @@
 # Telegram Support Bot
 
-A Telegram bot that manages support requests through an interactive WebApp interface. The bot allows users to submit support requests and chat with support staff through a modern, responsive web interface.
+A comprehensive support bot for Telegram that enables users to submit support requests and chat with admins through a WebApp interface.
 
 ## Features
 
 - Support request submission through WebApp
-- Real-time chat between users and support staff
-- Admin panel for support staff
-- Theme support for Telegram WebApp
-- Responsive design for all devices
-- Logging system for tracking issues
-- Database storage for requests and messages
+- Real-time chat between users and admins
+- PostgreSQL database for persistent storage
+- Automatic database migrations with Alembic
+- Enhanced logging system with both file and database handlers
+- Responsive WebApp design with Telegram theme support
+- Admin assignment and request management
+- Webhook-based updates handling
 
-## Requirements
+## Prerequisites
 
-- Python 3.11
-- `python-telegram-bot` library
-- FastAPI
-- SQLite3
-- Additional dependencies in `requirements.txt`
+- Python 3.11 or higher
+- PostgreSQL database (provided by Railway)
+- Telegram Bot Token
+- Railway account for deployment
+
+## Environment Variables
+
+```env
+SUPPORT_BOT_TOKEN=your_telegram_bot_token
+DATABASE_URL=your_postgresql_connection_url
+```
 
 ## Installation
 
-1. Install Python 3.11 from [python.org](https://www.python.org/downloads/)
-2. Clone this repository
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Create a `.env` file with your Telegram Bot Token:
-   ```
-   SUPPORT_BOT_TOKEN=your_bot_token_here
-   ```
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/support-bot.git
+cd support-bot
+```
 
-## Usage
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-1. Start the bot:
-   ```bash
-   python supportbot.py
-   ```
-2. Add the bot to your Telegram group
-3. Use the `/request` command to submit a support request
-4. Admins can manage requests through the admin interface
+3. Set up PostgreSQL database:
+- Create a new PostgreSQL service in Railway
+- Copy the connection URL to your environment variables
+
+4. Initialize the database:
+```bash
+alembic upgrade head
+```
+
+## Deployment on Railway
+
+1. Create a new project in Railway
+2. Add your repository
+3. Add PostgreSQL service
+4. Set environment variables:
+   - `SUPPORT_BOT_TOKEN`
+   - `DATABASE_URL` (automatically provided by Railway)
+5. Deploy the application
 
 ## Project Structure
 
-- `supportbot.py` - Main bot script
-- `index.html` - Support request submission WebApp
-- `chat.html` - Support chat WebApp interface
-- `requirements.txt` - Python dependencies
-- `.env` - Environment variables
-- `CHANGELOG.md` - Change history
-- `conversation_history.md` - Development progress
+```
+support-bot/
+├── supportbot.py        # Main bot application
+├── database.py          # Database models and configuration
+├── alembic/            # Database migrations
+├── requirements.txt    # Python dependencies
+├── Procfile           # Railway deployment configuration
+└── webapp-support-bot/
+    ├── index.html     # Support request form
+    └── chat.html      # Support chat interface
+```
 
-## Development
+## Database Schema
 
-- Uses FastAPI for webhook handling
-- SQLite for data storage
-- Telegram WebApp for user interface
-- Logging system for debugging
+### Requests
+- id (Primary Key)
+- user_id (Integer)
+- issue (Text)
+- assigned_admin (Integer, nullable)
+- status (Text)
+- solution (Text, nullable)
+
+### Messages
+- id (Primary Key)
+- request_id (Foreign Key)
+- sender_id (Integer)
+- sender_type (Text)
+- message (Text)
+- timestamp (DateTime)
+
+### Logs
+- id (Primary Key)
+- timestamp (DateTime)
+- level (Text)
+- message (Text)
+- context (Text)
 
 ## Contributing
 
@@ -66,7 +104,7 @@ A Telegram bot that manages support requests through an interactive WebApp inter
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
-5. Create a Pull Request
+5. Create a new Pull Request
 
 ## License
 
@@ -233,7 +271,7 @@ Current endpoints:
    - Connect GitHub repository to Railway
    - Set environment variables:
      - `SUPPORT_BOT_TOKEN`
-     - `WEBHOOK_URL`
+     - `DATABASE_URL` (automatically provided by Railway)
    - Deploy application
    - Verify webhook setup
 
@@ -246,7 +284,7 @@ Current endpoints:
 ### Environment Variables
 ```env
 SUPPORT_BOT_TOKEN=your_telegram_bot_token
-WEBHOOK_URL=https://your-railway-app.up.railway.app/webhook
+DATABASE_URL=your_postgresql_connection_url
 ```
 
 ### Monitoring

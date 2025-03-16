@@ -4,6 +4,7 @@ load_dotenv()
 
 import os
 import logging
+import logging.handlers
 from datetime import datetime
 from fastapi import FastAPI, Depends
 from fastapi.responses import JSONResponse, FileResponse
@@ -19,7 +20,6 @@ from database import get_db, init_db, Request, Message, Log
 
 # Set up logging
 logging.basicConfig(
-    filename='bot.log',
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -251,27 +251,24 @@ async def support_request_handler(payload: dict, db: Session = Depends(get_db)):
         return JSONResponse(content={"message": str(e)}, status_code=500)
 
 @fastapi_app.get("/chat/{request_id}")
-async def get_chat_page(request_id: int):
+async def get_chat_page(request_id: int, db: Session = Depends(get_db)):
     """Serve the chat page for a specific support request."""
     try:
         logging.info(f"Chat page requested for request #{request_id}")
         # Get request details to verify it exists
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT user_id FROM requests WHERE id = ?", (request_id,))
-            request = cursor.fetchone()
+        request = db.query(Request).filter(Request.id == request_id).first()
+        
+        if not request:
+            logging.error(f"Request #{request_id} not found")
+            return JSONResponse(content={"error": "Request not found"}, status_code=404)
             
-            if not request:
-                logging.error(f"Request #{request_id} not found")
-                return JSONResponse(content={"error": "Request not found"}, status_code=404)
-                
-            user_id = request[0]
-            logging.info(f"Found request #{request_id} for user {user_id}")
-            
-            # Add user_id to chat.html URL
-            chat_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
-            logging.info(f"Generated chat URL: {chat_url}")
-            return JSONResponse(content={"chat_url": chat_url})
+        user_id = request.user_id
+        logging.info(f"Found request #{request_id} for user {user_id}")
+        
+        # Add user_id to chat.html URL
+        chat_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
+        logging.info(f"Generated chat URL: {chat_url}")
+        return JSONResponse(content={"chat_url": chat_url})
     except Exception as e:
         logging.error(f"Error serving chat page: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -402,24 +399,22 @@ async def get_logs(limit: int = 100, level: str = None, db: Session = Depends(ge
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.post("/webapp-log")
-async def webapp_log(log_data: dict):
+async def webapp_log(log_data: dict, db: Session = Depends(get_db)):
     """Receive logs from the web app and store them in the database."""
     try:
-        # Log to database
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO logs (timestamp, level, message, context)
-                VALUES (?, ?, ?, ?)
-            """, (
-                datetime.now().isoformat(),
-                log_data.get("level", "info"),
-                log_data.get("message", ""),
-                str(log_data.get("context", {}))
-            ))
-            conn.commit()
+        # Create log entry
+        log_entry = Log(
+            timestamp=datetime.now(),
+            level=log_data.get("level", "info"),
+            message=log_data.get("message", ""),
+            context=str(log_data.get("context", {}))
+        )
         
-        # Also log to file
+        # Add to database
+        db.add(log_entry)
+        db.commit()
+        
+        # Also log to console
         logging.info(f"WebApp Log: {log_data}")
         return {"status": "ok"}
     except Exception as e:
@@ -448,46 +443,12 @@ async def health_check():
 # DATABASE SETUP & UTILITIES
 # -------------------------------
 def init_db():
-    """Initialize SQLite database for storing support requests and messages."""
+    """Initialize database tables using SQLAlchemy models."""
     try:
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            # Create requests table with proper AUTOINCREMENT
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS requests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER,
-                    issue TEXT,
-                    assigned_admin INTEGER DEFAULT NULL,
-                    status TEXT DEFAULT 'Open',
-                    solution TEXT DEFAULT NULL
-                )
-            """)
-            # Create messages table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    request_id INTEGER,
-                    sender_id INTEGER,
-                    sender_type TEXT,  -- 'user' or 'admin'
-                    message TEXT,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (request_id) REFERENCES requests(id)
-                )
-            """)
-            # Create logs table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    level TEXT,
-                    message TEXT,
-                    context TEXT
-                )
-            """)
-            conn.commit()
-            logging.info("Database initialized successfully")
-    except sqlite3.Error as e:
+        from database import Base, engine
+        Base.metadata.create_all(bind=engine)
+        logging.info("Database initialized successfully")
+    except Exception as e:
         logging.error(f"Database initialization error: {e}")
         raise
 
@@ -495,51 +456,61 @@ def init_db():
 class DatabaseLogHandler(logging.Handler):
     def emit(self, record):
         try:
-            with sqlite3.connect("support_requests.db") as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO logs (timestamp, level, message, context)
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    datetime.fromtimestamp(record.created).isoformat(),
-                    record.levelname,
-                    record.getMessage(),
-                    str(record.__dict__)
-                ))
-                conn.commit()
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            from database import Log
+            
+            engine = create_engine(os.getenv('DATABASE_URL'))
+            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+            db = SessionLocal()
+            
+            log_entry = Log(
+                timestamp=datetime.fromtimestamp(record.created),
+                level=record.levelname,
+                message=record.getMessage(),
+                context=str(record.__dict__)
+            )
+            
+            db.add(log_entry)
+            db.commit()
+            db.close()
         except Exception:
             self.handleError(record)
 
-# Set up logging with both file and database handlers
+# Set up logging with database handler
 def setup_logging():
-    """Set up logging with both file and database handlers."""
-    # Create formatters
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    
-    # File handler with rotation
-    file_handler = logging.handlers.RotatingFileHandler(
-        'bot.log',
-        maxBytes=10*1024*1024,  # 10MB
-        backupCount=5,
-        encoding='utf-8'
-    )
-    file_handler.setFormatter(formatter)
-    
-    # Database handler
-    db_handler = DatabaseLogHandler()
-    db_handler.setFormatter(formatter)
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(db_handler)
-    
-    # Add separator to log file
-    with open('bot.log', 'a', encoding='utf-8') as f:
-        f.write('\n' + '='*80 + '\n')
-        f.write(f'Bot started at {datetime.now().isoformat()}\n')
-        f.write('='*80 + '\n\n')
+    """Set up logging with database handler."""
+    try:
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        
+        # Set up console handler for immediate feedback
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        
+        # Database handler
+        db_handler = DatabaseLogHandler()
+        db_handler.setFormatter(formatter)
+        
+        # Configure root logger
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        root_logger.addHandler(console_handler)
+        root_logger.addHandler(db_handler)
+        
+        # Log startup
+        logging.info('='*80)
+        logging.info(f'Bot started at {datetime.now().isoformat()}')
+        logging.info('='*80)
+        
+    except Exception as e:
+        print(f"Error setting up logging: {e}")
+        # Set up basic console logging as fallback
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+        logging.warning("Falling back to basic console logging")
 
 async def set_webhook():
     """Sets Telegram bot webhook for handling messages via FastAPI."""
@@ -601,151 +572,157 @@ async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------------------
 # SUPPORT REQUEST PROCESS
 # -------------------------------
-async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE, db: Session = Depends(get_db)):
     """Collects user issue details and notifies the admin group."""
     user_id = update.message.from_user.id
     if context.user_data.get(f"requesting_support_{user_id}"):
         issue_description = update.message.text
         logging.info(f"Received issue from user {user_id}: {issue_description}")
 
-        # Save issue to database
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            
-            # First, get the current max request ID
-            cursor.execute("SELECT MAX(id) FROM requests")
-            current_max_id = cursor.fetchone()[0] or 0
-            logging.info(f"Current max request ID: {current_max_id}")
-            
-            # Insert new request
-            cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
-            conn.commit()
-            request_id = cursor.lastrowid
-            
-            # Verify the new request ID
-            logging.info(f"New request ID generated: {request_id}")
-            
-            # Save initial message
-            cursor.execute("""
-                INSERT INTO messages (request_id, sender_id, sender_type, message)
-                VALUES (?, ?, 'user', ?)
-            """, (request_id, user_id, issue_description))
-            conn.commit()
-
-        # Create web app URL
-        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
-        logging.debug(f"Generated WebApp URL: {webapp_url}")
-
-        # Build Admin Group Message with Action Buttons
         try:
-            logging.info(f"Creating admin group buttons for request #{request_id}")
-            
-            # Create WebApp button for admin with proper error handling
-            buttons = [
-                [InlineKeyboardButton(
-                    text="Open Support Chat",
-                    web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat")
-                )],
-                [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
-                [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
-            ]
-            
-            # Log button structure
-            logging.debug(f"Button structure created: {[[b.text for b in row] for row in buttons]}")
-            
-            reply_markup = InlineKeyboardMarkup(buttons)
-            
-            # Verify button creation
-            if not reply_markup or not reply_markup.inline_keyboard:
-                raise ValueError("Failed to create button markup")
-            
-            # Log the admin notification attempt
-            logging.info(f"Attempting to send admin notification for request #{request_id}")
-            
-            # Send message to admin group
-            await context.bot.send_message(
-                ADMIN_GROUP_ID,
-                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue_description}",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
+            # Create new request
+            new_request = Request(
+                user_id=user_id,
+                issue=issue_description,
+                status='Open'
             )
-            logging.info(f"Successfully sent admin notification for request #{request_id}")
+            db.add(new_request)
+            db.commit()
+            db.refresh(new_request)
+            request_id = new_request.id
             
-        except Exception as e:
-            logging.error(f"Failed to create WebApp button for admin: {e}", exc_info=True)
-            # Instead of falling back to URL button, try to fix the WebApp button
+            # Create initial message
+            new_message = Message(
+                request_id=request_id,
+                sender_id=user_id,
+                sender_type='user',
+                message=issue_description
+            )
+            db.add(new_message)
+            db.commit()
+
+            # Create web app URL
+            webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
+            logging.debug(f"Generated WebApp URL: {webapp_url}")
+
+            # Build Admin Group Message with Action Buttons
             try:
-                logging.info(f"Retrying WebApp button creation for request #{request_id}")
-                # Retry with explicit WebAppInfo parameters
+                logging.info(f"Creating admin group buttons for request #{request_id}")
+                
+                # Create WebApp button for admin with proper error handling
                 buttons = [
                     [InlineKeyboardButton(
                         text="Open Support Chat",
-                        web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat_retry")
+                        web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat")
                     )],
                     [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
                     [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
                 ]
                 
-                # Log retry button structure
-                logging.debug(f"Retry button structure: {[[b.text for b in row] for row in buttons]}")
+                # Log button structure
+                logging.debug(f"Button structure created: {[[b.text for b in row] for row in buttons]}")
                 
                 reply_markup = InlineKeyboardMarkup(buttons)
                 
-                # Verify WebApp button creation again
+                # Verify button creation
                 if not reply_markup or not reply_markup.inline_keyboard:
-                    raise ValueError("Failed to create WebApp button markup for admin on retry")
+                    raise ValueError("Failed to create button markup")
                 
+                # Log the admin notification attempt
+                logging.info(f"Attempting to send admin notification for request #{request_id}")
+                
+                # Send message to admin group
                 await context.bot.send_message(
                     ADMIN_GROUP_ID,
                     f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue_description}",
                     reply_markup=reply_markup,
                     parse_mode="Markdown"
                 )
-                logging.info(f"Successfully sent admin notification for request #{request_id} on retry")
-            except Exception as retry_error:
-                logging.error(f"Failed to send WebApp button for admin on retry: {retry_error}", exc_info=True)
-                # If WebApp button fails completely, send message without buttons
+                logging.info(f"Successfully sent admin notification for request #{request_id}")
+                
+            except Exception as e:
+                logging.error(f"Failed to create WebApp button for admin: {e}", exc_info=True)
+                # Instead of falling back to URL button, try to fix the WebApp button
+                try:
+                    logging.info(f"Retrying WebApp button creation for request #{request_id}")
+                    # Retry with explicit WebAppInfo parameters
+                    buttons = [
+                        [InlineKeyboardButton(
+                            text="Open Support Chat",
+                            web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat_retry")
+                        )],
+                        [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
+                        [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+                    ]
+                    
+                    # Log retry button structure
+                    logging.debug(f"Retry button structure: {[[b.text for b in row] for row in buttons]}")
+                    
+                    reply_markup = InlineKeyboardMarkup(buttons)
+                    
+                    # Verify WebApp button creation again
+                    if not reply_markup or not reply_markup.inline_keyboard:
+                        raise ValueError("Failed to create WebApp button markup for admin on retry")
+                    
+                    await context.bot.send_message(
+                        ADMIN_GROUP_ID,
+                        f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue_description}",
+                        reply_markup=reply_markup,
+                        parse_mode="Markdown"
+                    )
+                    logging.info(f"Successfully sent admin notification for request #{request_id} on retry")
+                except Exception as retry_error:
+                    logging.error(f"Failed to send WebApp button for admin on retry: {retry_error}", exc_info=True)
+                    # If WebApp button fails completely, send message without buttons
+                    await context.bot.send_message(
+                        ADMIN_GROUP_ID,
+                        f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue_description}",
+                        parse_mode="Markdown"
+                    )
+                    logging.warning(f"Sent admin notification without buttons for request #{request_id}")
+
+            # Send confirmation to user with WebApp button
+            try:
+                logging.info(f"Attempting to send confirmation to user {user_id}")
+                keyboard = [[InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url, start_parameter="user_support_chat")
+                )]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                # Log user notification attempt
+                logging.debug(f"User notification button structure: {[[b.text for b in row] for row in keyboard]}")
+                
                 await context.bot.send_message(
-                    ADMIN_GROUP_ID,
-                    f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue_description}",
-                    parse_mode="Markdown"
+                    user_id,
+                    "✅ Your request has been submitted. A support admin will reach out soon.",
+                    reply_markup=reply_markup
                 )
-                logging.warning(f"Sent admin notification without buttons for request #{request_id}")
+                logging.info(f"Successfully sent confirmation to user {user_id}")
+            except Exception as e:
+                logging.error(f"Failed to send WebApp button to user: {e}", exc_info=True)
+                # If WebApp button fails, send message without button
+                logging.warning(f"Sending user confirmation without button for request #{request_id}")
+                await context.bot.send_message(
+                    user_id,
+                    "✅ Your request has been submitted. A support admin will reach out soon."
+                )
 
-        # Send confirmation to user with WebApp button
-        try:
-            logging.info(f"Attempting to send confirmation to user {user_id}")
-            keyboard = [[InlineKeyboardButton(
-                text="Open Support Chat",
-                web_app=WebAppInfo(url=webapp_url, start_parameter="user_support_chat")
-            )]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Log user notification attempt
-            logging.debug(f"User notification button structure: {[[b.text for b in row] for row in keyboard]}")
-            
-            await context.bot.send_message(
-                user_id,
-                "✅ Your request has been submitted. A support admin will reach out soon.",
-                reply_markup=reply_markup
-            )
-            logging.info(f"Successfully sent confirmation to user {user_id}")
+            context.user_data[f"requesting_support_{user_id}"] = False
+            logging.info(f"Support request process completed for user {user_id}")
+
         except Exception as e:
-            logging.error(f"Failed to send WebApp button to user: {e}", exc_info=True)
-            # If WebApp button fails, send message without button
-            logging.warning(f"Sending user confirmation without button for request #{request_id}")
+            logging.error(f"Error collecting issue: {e}")
+            # If there's an error, send a generic error message
             await context.bot.send_message(
                 user_id,
-                "✅ Your request has been submitted. A support admin will reach out soon."
+                "Sorry, there was an error processing your request. Please try again later."
             )
-
-        context.user_data[f"requesting_support_{user_id}"] = False
-        logging.info(f"Support request process completed for user {user_id}")
 
 # -------------------------------
 # ADMIN ACTIONS
 # -------------------------------
-async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE, db: Session = Depends(get_db)):
     """Assigns an admin to a request and notifies the user."""
     query = update.callback_query
     admin_id = query.from_user.id
@@ -757,102 +734,94 @@ async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.debug(f"Admin details: id={admin_id}, username={query.from_user.username}")
 
     try:
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            # Check if request is already assigned
-            cursor.execute("SELECT assigned_admin, user_id, issue FROM requests WHERE id = ?", (request_id,))
-            request_info = cursor.fetchone()
-            
-            if not request_info:
-                logging.error(f"Request #{request_id} not found in database")
-                await query.answer("Error: Request not found.")
-                return
-                
-            current_admin, user_id, issue = request_info
-            
-            if current_admin:
-                logging.warning(f"Request #{request_id} is already assigned to admin {current_admin}")
-                await query.answer("This request is already assigned to an admin.")
-                return
-            
-            # Assign the request to the admin
-            cursor.execute("""
-                UPDATE requests 
-                SET assigned_admin = ?, 
-                    status = 'Assigned' 
-                WHERE id = ?
-            """, (admin_id, request_id))
-            conn.commit()
-            logging.info(f"Database updated: Request #{request_id} assigned to admin {admin_id}")
-    except sqlite3.Error as e:
-        logging.error(f"Database error during assignment: {e}", exc_info=True)
-        await query.answer("Error: Could not assign request.")
-        return
+        # Get request from database
+        request = db.query(Request).filter(Request.id == request_id).first()
+        
+        if not request:
+            logging.error(f"Request #{request_id} not found in database")
+            await query.answer("Error: Request not found.")
+            return
+        
+        if request.assigned_admin:
+            logging.warning(f"Request #{request_id} is already assigned to admin {request.assigned_admin}")
+            await query.answer("This request is already assigned to an admin.")
+            return
+        
+        # Assign the request to the admin
+        request.assigned_admin = admin_id
+        request.status = 'Assigned'
+        db.commit()
+        
+        logging.info(f"Database updated: Request #{request_id} assigned to admin {admin_id}")
+        
+        admin_username = query.from_user.username or "Admin"
+        
+        # Create web app URL for admin chat
+        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={request.user_id}&is_admin=true"
+        logging.debug(f"Generated WebApp URL for admin: {webapp_url}")
 
-    admin_username = query.from_user.username or "Admin"
-    
-    # Create web app URL for admin chat
-    webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}&is_admin=true"
-    logging.debug(f"Generated WebApp URL for admin: {webapp_url}")
-
-    try:
-        # Update admin group message with new status and buttons
-        buttons = [
-            [InlineKeyboardButton(
-                text="Open User Chat",
-                web_app=WebAppInfo(url=webapp_url)
-            )],
-            [InlineKeyboardButton("Mark as Solved", callback_data=f"solve_{request_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        
-        # Update the original message
-        await query.message.edit_text(
-            f"📌 **Support Request #{request_id}**\n"
-            f"🔹 **User ID:** `{user_id}`\n"
-            f"📄 **Issue:** {issue}\n"
-            f"👤 **Assigned to:** @{admin_username}\n"
-            f"📱 **Status:** Assigned",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        
-        # Send notification in admin group about assignment
-        await context.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"✅ Request #{request_id} has been assigned to @{admin_username}",
-            parse_mode="Markdown"
-        )
-        
-        # Notify user about admin assignment
         try:
-            keyboard = [[InlineKeyboardButton(
-                text="Open Support Chat",
-                web_app=WebAppInfo(url=webapp_url)
-            )]]
-            user_reply_markup = InlineKeyboardMarkup(keyboard)
+            # Update admin group message with new status and buttons
+            buttons = [
+                [InlineKeyboardButton(
+                    text="Open User Chat",
+                    web_app=WebAppInfo(url=webapp_url)
+                )],
+                [InlineKeyboardButton("Mark as Solved", callback_data=f"solve_{request_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(buttons)
             
-            await context.bot.send_message(
-                user_id,
-                f"✨ Admin @{admin_username} has been assigned to your request.\n"
-                f"Click below to start chatting!",
-                reply_markup=user_reply_markup
+            # Update the original message
+            await query.message.edit_text(
+                f"📌 **Support Request #{request_id}**\n"
+                f"🔹 **User ID:** `{request.user_id}`\n"
+                f"📄 **Issue:** {request.issue}\n"
+                f"👤 **Assigned to:** @{admin_username}\n"
+                f"📱 **Status:** Assigned",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
             )
-            logging.info(f"User {user_id} notified about admin assignment")
+            
+            # Send notification in admin group about assignment
+            await context.bot.send_message(
+                ADMIN_GROUP_ID,
+                f"✅ Request #{request_id} has been assigned to @{admin_username}",
+                parse_mode="Markdown"
+            )
+            
+            # Notify user about admin assignment
+            try:
+                keyboard = [[InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]]
+                user_reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await context.bot.send_message(
+                    request.user_id,
+                    f"✨ Admin @{admin_username} has been assigned to your request.\n"
+                    f"Click below to start chatting!",
+                    reply_markup=user_reply_markup
+                )
+                logging.info(f"User {request.user_id} notified about admin assignment")
+            except Exception as e:
+                logging.error(f"Failed to send notification to user: {e}", exc_info=True)
+                # If WebApp button fails, send simple message
+                await context.bot.send_message(
+                    request.user_id,
+                    f"✨ Admin @{admin_username} has been assigned to your request."
+                )
+            
+            await query.answer("✅ You have been assigned to this request!")
+            logging.info(f"Assignment process completed for request #{request_id}")
+            
         except Exception as e:
-            logging.error(f"Failed to send notification to user: {e}", exc_info=True)
-            # If WebApp button fails, send simple message
-            await context.bot.send_message(
-                user_id,
-                f"✨ Admin @{admin_username} has been assigned to your request."
-            )
-        
-        await query.answer("✅ You have been assigned to this request!")
-        logging.info(f"Assignment process completed for request #{request_id}")
-        
+            logging.error(f"Error updating admin message: {e}", exc_info=True)
+            await query.answer("Error updating message, but request was assigned.")
+
     except Exception as e:
-        logging.error(f"Error updating admin message: {e}", exc_info=True)
-        await query.answer("Error updating message, but request was assigned.")
+        logging.error(f"Error during assignment: {e}")
+        await query.answer("Error: Could not assign request.")
 
 # -------------------------------
 # MAIN FUNCTION
