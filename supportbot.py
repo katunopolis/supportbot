@@ -3,12 +3,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import sqlite3
-import telegram  # Catching Forbidden errors
-import uvicorn
 import logging
 from datetime import datetime
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -17,6 +14,8 @@ from telegram.ext import (
     MessageHandler, filters, ContextTypes
 )
 import asyncio
+from sqlalchemy.orm import Session
+from database import get_db, init_db, Request, Message, Log
 
 # Set up logging
 logging.basicConfig(
@@ -156,7 +155,7 @@ async def webhook(update: dict):
         return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
     
 @fastapi_app.post("/support-request")
-async def support_request_handler(payload: dict):
+async def support_request_handler(payload: dict, db: Session = Depends(get_db)):
     """
     Handles support requests from the Web App.
     Expects a JSON payload with keys 'user_id' and 'issue'.
@@ -167,108 +166,57 @@ async def support_request_handler(payload: dict):
         if not user_id or not issue:
             return JSONResponse(content={"message": "Missing user_id or issue"}, status_code=400)
         
-        # Save issue to the database
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            
-            # First, get the current max request ID
-            cursor.execute("SELECT MAX(id) FROM requests")
-            current_max_id = cursor.fetchone()[0] or 0
-            logging.info(f"Current max request ID: {current_max_id}")
-            
-            # Insert new request
-            cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue))
-            conn.commit()
-            request_id = cursor.lastrowid
-            
-            # Verify the new request ID
-            logging.info(f"New request ID generated: {request_id}")
-            
-            # Save initial message
-            cursor.execute("""
-                INSERT INTO messages (request_id, sender_id, sender_type, message)
-                VALUES (?, ?, 'user', ?)
-            """, (request_id, user_id, issue))
-            conn.commit()
-            
-            # Verify the request exists
-            cursor.execute("SELECT id FROM requests WHERE id = ?", (request_id,))
-            if not cursor.fetchone():
-                logging.error(f"Request {request_id} not found after insertion")
-                return JSONResponse(content={"error": "Failed to create request"}, status_code=500)
+        # Create new request in database
+        new_request = Request(user_id=user_id, issue=issue)
+        db.add(new_request)
+        db.commit()
+        db.refresh(new_request)
+        request_id = new_request.id
+        
+        # Create initial message
+        new_message = Message(
+            request_id=request_id,
+            sender_id=user_id,
+            sender_type='user',
+            message=issue
+        )
+        db.add(new_message)
+        db.commit()
         
         # Create web app URL with request ID
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
         
         # Send stand-by message to user with WebApp button
         try:
-            # Create WebApp button with proper error handling
             keyboard = [[InlineKeyboardButton(
                 text="Open Support Chat",
                 web_app=WebAppInfo(url=webapp_url)
             )]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Log the button creation attempt
-            logging.info(f"Attempting to send WebApp button to user {user_id} with URL: {webapp_url}")
-            
-            # Verify WebApp button creation
-            if not reply_markup or not reply_markup.inline_keyboard:
-                raise ValueError("Failed to create WebApp button markup")
-            
-            # Send message with WebApp button
             await bot_app.bot.send_message(
                 user_id,
                 "✅ Your support request has been received!\n\n"
                 "An admin will be with you shortly. Please stand by...",
                 reply_markup=reply_markup
             )
-            logging.info(f"Successfully sent WebApp button to user {user_id}")
         except Exception as e:
             logging.error(f"Failed to send WebApp button to user: {e}")
-            # Instead of falling back to URL button, try to fix the WebApp button
-            try:
-                # Retry with explicit WebAppInfo parameters
-                keyboard = [[InlineKeyboardButton(
-                    text="Open Support Chat",
-                    web_app=WebAppInfo(url=webapp_url, start_parameter="support_chat")
-                )]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                # Verify WebApp button creation again
-                if not reply_markup or not reply_markup.inline_keyboard:
-                    raise ValueError("Failed to create WebApp button markup on retry")
-                
-                await bot_app.bot.send_message(
-                    user_id,
-                    "✅ Your support request has been received!\n\n"
-                    "An admin will be with you shortly. Please stand by...",
-                    reply_markup=reply_markup
-                )
-                logging.info(f"Successfully sent WebApp button to user {user_id} on retry")
-            except Exception as retry_error:
-                logging.error(f"Failed to send WebApp button on retry: {retry_error}")
-                # If WebApp button fails completely, send message without button
-                await bot_app.bot.send_message(
-                    user_id,
-                    "✅ Your support request has been received!\n\n"
-                    "An admin will be with you shortly. Please stand by..."
-                )
+            await bot_app.bot.send_message(
+                user_id,
+                "✅ Your support request has been received!\n\n"
+                "An admin will be with you shortly. Please stand by..."
+            )
         
         # Build Admin Group Message with Action Buttons
         try:
-            # Create simple button structure
             buttons = [
                 [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
                 [InlineKeyboardButton("Open Support Chat", web_app=WebAppInfo(url=webapp_url))]
             ]
             
-            # Log button creation attempt
-            logging.info(f"Creating admin buttons for request #{request_id}: {[[b.text for b in row] for row in buttons]}")
-            
             reply_markup = InlineKeyboardMarkup(buttons)
             
-            # Send message with explicit parse_mode and disable_web_page_preview
             admin_message = await bot_app.bot.send_message(
                 chat_id=ADMIN_GROUP_ID,
                 text=f"📌 *New Support Request #{request_id}*\n🔹 *User ID:* `{user_id}`\n📄 *Issue:* {issue}",
@@ -277,27 +225,19 @@ async def support_request_handler(payload: dict):
                 disable_web_page_preview=True
             )
             
-            logging.info(f"Successfully sent admin notification with buttons for request #{request_id}")
-            
-            # Verify message was sent with buttons
             if not admin_message.reply_markup:
-                logging.warning(f"Message sent but buttons may not be visible for request #{request_id}")
-                # Try to edit the message to add buttons if they're missing
                 try:
                     await admin_message.edit_reply_markup(reply_markup=reply_markup)
-                    logging.info(f"Successfully added buttons to message for request #{request_id}")
                 except Exception as edit_error:
                     logging.error(f"Failed to edit message to add buttons: {edit_error}")
         except Exception as e:
             logging.error(f"Failed to send admin notification: {e}", exc_info=True)
-            # Simplified retry with basic message
             try:
                 await bot_app.bot.send_message(
                     chat_id=ADMIN_GROUP_ID,
                     text=f"📌 *New Support Request #{request_id}*\n🔹 *User ID:* `{user_id}`\n📄 *Issue:* {issue}\n\n⚠️ Error: Could not add buttons",
                     parse_mode="Markdown"
                 )
-                logging.warning(f"Sent admin notification without buttons for request #{request_id}")
             except Exception as retry_error:
                 logging.error(f"Failed to send admin notification on retry: {retry_error}")
         
@@ -337,87 +277,78 @@ async def get_chat_page(request_id: int):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.get("/chat/{request_id}/messages")
-async def get_chat_messages(request_id: int):
+async def get_chat_messages(request_id: int, db: Session = Depends(get_db)):
     """Get all messages for a specific support request."""
     try:
-        logging.info(f"Fetching messages for request #{request_id}")
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT m.*, r.user_id, r.assigned_admin
-                FROM messages m
-                JOIN requests r ON m.request_id = r.id
-                WHERE m.request_id = ?
-                ORDER BY m.timestamp ASC
-            """, (request_id,))
-            messages = cursor.fetchall()
+        request = db.query(Request).filter(Request.id == request_id).first()
+        if not request:
+            return JSONResponse(content={"error": "Request not found"}, status_code=404)
             
-            if not messages:
-                logging.warning(f"No messages found for request #{request_id}")
-                return JSONResponse(content={"error": "Request not found"}, status_code=404)
-                
-            # Format messages for frontend
-            formatted_messages = []
-            for msg in messages:
-                formatted_messages.append({
-                    "id": msg[0],
-                    "request_id": msg[1],
-                    "sender_id": msg[2],
-                    "sender_type": msg[3],
-                    "message": msg[4],
-                    "timestamp": msg[5],
-                    "user_id": msg[6],
-                    "assigned_admin": msg[7]
-                })
-            
-            logging.info(f"Found {len(formatted_messages)} messages for request #{request_id}")
-            logging.debug(f"Messages: {formatted_messages}")
-            return JSONResponse(content={"messages": formatted_messages})
+        messages = db.query(Message).filter(Message.request_id == request_id).all()
+        
+        formatted_messages = [{
+            "id": msg.id,
+            "request_id": msg.request_id,
+            "sender_id": msg.sender_id,
+            "sender_type": msg.sender_type,
+            "message": msg.message,
+            "timestamp": msg.timestamp.isoformat(),
+        } for msg in messages]
+        
+        return JSONResponse(content={"messages": formatted_messages})
     except Exception as e:
         logging.error(f"Error fetching chat messages: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.post("/chat/{request_id}/message")
-async def send_message(request_id: int, payload: dict):
+async def send_message(request_id: int, payload: dict, db: Session = Depends(get_db)):
     """Send a new message in the support chat."""
     try:
-        logging.info(f"Received message for request #{request_id}: {payload}")
         sender_id = payload.get("sender_id")
         sender_type = payload.get("sender_type")
-        message = payload.get("message")
+        message_text = payload.get("message")
         
-        if not all([sender_id, sender_type, message]):
-            logging.error(f"Missing required fields in payload: {payload}")
+        if not all([sender_id, sender_type, message_text]):
             return JSONResponse(content={"error": "Missing required fields"}, status_code=400)
         
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            # Save message
-            cursor.execute("""
-                INSERT INTO messages (request_id, sender_id, sender_type, message)
-                VALUES (?, ?, ?, ?)
-            """, (request_id, sender_id, sender_type, message))
-            conn.commit()
-            logging.info(f"Message saved to database for request #{request_id}")
-            
-            # Get request details
-            cursor.execute("SELECT user_id, assigned_admin FROM requests WHERE id = ?", (request_id,))
-            request = cursor.fetchone()
-            
-            if not request:
-                logging.error(f"Request #{request_id} not found in database")
-                return JSONResponse(content={"error": "Request not found"}, status_code=404)
-            
-            user_id, assigned_admin = request
-            logging.info(f"Request #{request_id} details: user_id={user_id}, assigned_admin={assigned_admin}")
-            
-            # Create web app URL
-            webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
-            logging.info(f"Generated web app URL: {webapp_url}")
-            
-            # Notify the other party (user or admin) via Telegram with web app URL
-            if sender_type == "admin":
-                # Notify user with web app URL
+        # Save message to database
+        new_message = Message(
+            request_id=request_id,
+            sender_id=sender_id,
+            sender_type=sender_type,
+            message=message_text
+        )
+        db.add(new_message)
+        db.commit()
+        
+        # Get request details
+        request = db.query(Request).filter(Request.id == request_id).first()
+        if not request:
+            return JSONResponse(content={"error": "Request not found"}, status_code=404)
+        
+        user_id = request.user_id
+        assigned_admin = request.assigned_admin
+        
+        # Create web app URL
+        webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
+        
+        # Notify the other party
+        if sender_type == "admin":
+            try:
+                keyboard = [[InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url)
+                )]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await bot_app.bot.send_message(
+                    user_id,
+                    f"💬 New message from support:\n{message_text}",
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logging.error(f"Failed to send notification to user: {e}")
+        else:
+            if assigned_admin:
                 try:
                     keyboard = [[InlineKeyboardButton(
                         text="Open Support Chat",
@@ -425,103 +356,39 @@ async def send_message(request_id: int, payload: dict):
                     )]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await bot_app.bot.send_message(
-                        user_id,
-                        f"💬 New message from support:\n{message}",
+                        assigned_admin,
+                        f"💬 New message from user:\n{message_text}",
                         reply_markup=reply_markup
                     )
-                    logging.info(f"Sent notification to user {user_id}")
                 except Exception as e:
-                    logging.error(f"Failed to send WebApp button to user: {e}")
-                    # Fallback to regular URL button
-                    keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    await bot_app.bot.send_message(
-                        user_id,
-                        f"💬 New message from support:\n{message}",
-                        reply_markup=reply_markup
-                    )
-            else:
-                # Notify admin with web app URL
-                if assigned_admin:
-                    try:
-                        keyboard = [[InlineKeyboardButton(
-                            text="Open Support Chat",
-                            web_app=WebAppInfo(url=webapp_url)
-                        )]]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        await bot_app.bot.send_message(
-                            assigned_admin,
-                            f"💬 New message from user:\n{message}",
-                            reply_markup=reply_markup
-                        )
-                        logging.info(f"Sent notification to admin {assigned_admin}")
-                    except Exception as e:
-                        logging.error(f"Failed to send WebApp button to admin: {e}")
-                        # Fallback to regular URL button
-                        keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
-                        reply_markup = InlineKeyboardMarkup(keyboard)
-                        await bot_app.bot.send_message(
-                            assigned_admin,
-                            f"💬 New message from user:\n{message}",
-                            reply_markup=reply_markup
-                        )
+                    logging.error(f"Failed to send notification to admin: {e}")
         
-        logging.info(f"Message saved successfully for request #{request_id}")
         return JSONResponse(content={"message": "Message sent successfully"})
     except Exception as e:
         logging.error(f"Error sending message: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.get("/logs")
-async def get_logs(limit: int = 100, level: str = None):
+async def get_logs(limit: int = 100, level: str = None, db: Session = Depends(get_db)):
     """Get logs from the database with optional filtering."""
     try:
-        # Add a small delay to ensure fresh data
-        await asyncio.sleep(0.1)
+        query = db.query(Log)
         
-        with sqlite3.connect("support_requests.db") as conn:
-            cursor = conn.cursor()
-            query = "SELECT timestamp, level, message, context FROM logs"
-            params = []
-            
-            if level:
-                query += " WHERE level = ?"
-                params.append(level)
-            
-            query += " ORDER BY timestamp DESC LIMIT ?"
-            params.append(limit)
-            
-            cursor.execute(query, params)
-            logs = cursor.fetchall()
-            
-            # Add cache-busting headers
-            headers = {
-                "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-                "Pragma": "no-cache",
-                "Expires": "0",
-                "Surrogate-Control": "no-store",
-                "Last-Modified": datetime.now().isoformat()
-            }
-            
-            return JSONResponse(
-                content={
-                    "logs": [
-                        {
-                            "timestamp": log[0],
-                            "level": log[1],
-                            "message": log[2],
-                            "context": log[3]
-                        }
-                        for log in logs
-                    ],
-                    "timestamp": datetime.now().isoformat()  # Add current timestamp to response
-                },
-                headers=headers
-            )
-    except Exception as e:
-        logging.error(f"Error fetching logs: {e}")
+        if level:
+            query = query.filter(Log.level == level)
+        
+        logs = query.order_by(Log.timestamp.desc()).limit(limit).all()
+        
         return JSONResponse(
-            content={"error": str(e)},
+            content={
+                "logs": [{
+                    "timestamp": log.timestamp.isoformat(),
+                    "level": log.level,
+                    "message": log.message,
+                    "context": log.context
+                } for log in logs],
+                "timestamp": datetime.now().isoformat()
+            },
             headers={
                 "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
                 "Pragma": "no-cache",
@@ -530,6 +397,9 @@ async def get_logs(limit: int = 100, level: str = None):
                 "Last-Modified": datetime.now().isoformat()
             }
         )
+    except Exception as e:
+        logging.error(f"Error fetching logs: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @fastapi_app.post("/webapp-log")
 async def webapp_log(log_data: dict):
