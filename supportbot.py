@@ -257,38 +257,35 @@ async def support_request_handler(payload: dict):
         
         # Build Admin Group Message with Action Buttons
         try:
-            # Log button creation attempt
-            logging.info(f"Creating admin group buttons for request #{request_id}")
-            
-            # Create WebApp button for admin with proper error handling
+            # Create simple button structure first
             buttons = [
-                [InlineKeyboardButton(
-                    text="Open Support Chat",
-                    web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat")
-                )],
                 [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
-                [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+                [InlineKeyboardButton("Open Support Chat", web_app=WebAppInfo(url=webapp_url))]
             ]
             
-            # Log button structure
-            logging.debug(f"Button structure created: {[[b.text for b in row] for row in buttons]}")
+            # Log button creation attempt
+            logging.info(f"Creating admin buttons for request #{request_id}: {[[b.text for b in row] for row in buttons]}")
             
             reply_markup = InlineKeyboardMarkup(buttons)
             
-            # Verify WebApp button creation
+            # Verify button creation
             if not reply_markup or not reply_markup.inline_keyboard:
-                raise ValueError("Failed to create WebApp button markup for admin")
+                raise ValueError("Failed to create button markup")
             
-            # Log the admin notification attempt
-            logging.info(f"Attempting to send admin notification for request #{request_id}")
-            
-            await bot_app.bot.send_message(
-                ADMIN_GROUP_ID,
-                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+            # Send message with explicit parse_mode and disable_web_page_preview
+            admin_message = await bot_app.bot.send_message(
+                chat_id=ADMIN_GROUP_ID,
+                text=f"📌 *New Support Request #{request_id}*\n🔹 *User ID:* `{user_id}`\n📄 *Issue:* {issue}",
                 reply_markup=reply_markup,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
+                disable_web_page_preview=True
             )
-            logging.info(f"Successfully sent admin notification for request #{request_id}")
+            
+            logging.info(f"Successfully sent admin notification with buttons for request #{request_id}")
+            
+            # Verify message was sent with buttons
+            if not admin_message.reply_markup:
+                logging.warning(f"Message sent but buttons may not be visible for request #{request_id}")
         except Exception as e:
             logging.error(f"Failed to create WebApp button for admin: {e}", exc_info=True)
             # Instead of falling back to URL button, try to fix the WebApp button
