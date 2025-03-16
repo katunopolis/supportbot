@@ -918,99 +918,100 @@ async def assign_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE requests SET assigned_admin = ?, status = 'Assigned' WHERE id = ?", (admin_id, request_id))
-            cursor.execute("SELECT user_id FROM requests WHERE id = ?", (request_id,))
-            user = cursor.fetchone()
-            logging.info(f"Database updated for request #{request_id}")
+            # Check if request is already assigned
+            cursor.execute("SELECT assigned_admin, user_id, issue FROM requests WHERE id = ?", (request_id,))
+            request_info = cursor.fetchone()
+            
+            if not request_info:
+                logging.error(f"Request #{request_id} not found in database")
+                await query.answer("Error: Request not found.")
+                return
+                
+            current_admin, user_id, issue = request_info
+            
+            if current_admin:
+                logging.warning(f"Request #{request_id} is already assigned to admin {current_admin}")
+                await query.answer("This request is already assigned to an admin.")
+                return
+            
+            # Assign the request to the admin
+            cursor.execute("""
+                UPDATE requests 
+                SET assigned_admin = ?, 
+                    status = 'Assigned' 
+                WHERE id = ?
+            """, (admin_id, request_id))
+            conn.commit()
+            logging.info(f"Database updated: Request #{request_id} assigned to admin {admin_id}")
     except sqlite3.Error as e:
         logging.error(f"Database error during assignment: {e}", exc_info=True)
         await query.answer("Error: Could not assign request.")
         return
 
-    if not user:
-        logging.error(f"Request #{request_id} not found in database")
-        await query.answer("Error: Request not found in database.")
-        return
-
-    user_id = user[0]
     admin_username = query.from_user.username or "Admin"
     
-    # Create web app URL
+    # Create web app URL for admin chat
     webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}&is_admin=true"
-    logging.debug(f"Generated WebApp URL: {webapp_url}")
+    logging.debug(f"Generated WebApp URL for admin: {webapp_url}")
 
-    # Update the message in admin group with new buttons
     try:
-        # Create new buttons for assigned admin
-        logging.info(f"Creating new buttons for assigned admin {admin_id}")
+        # Update admin group message with new status and buttons
         buttons = [
             [InlineKeyboardButton(
-                text="Open chat with user",
-                web_app=WebAppInfo(url=webapp_url, start_parameter="admin_chat_with_user")
+                text="Open User Chat",
+                web_app=WebAppInfo(url=webapp_url)
             )],
-            [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+            [InlineKeyboardButton("Mark as Solved", callback_data=f"solve_{request_id}")]
         ]
-        
-        # Log button structure
-        logging.debug(f"New button structure: {[[b.text for b in row] for row in buttons]}")
-        
         reply_markup = InlineKeyboardMarkup(buttons)
         
         # Update the original message
-        logging.info(f"Attempting to update admin group message for request #{request_id}")
         await query.message.edit_text(
             f"📌 **Support Request #{request_id}**\n"
             f"🔹 **User ID:** `{user_id}`\n"
             f"📄 **Issue:** {issue}\n"
-            f"👤 **Assigned to:** @{admin_username}",
+            f"👤 **Assigned to:** @{admin_username}\n"
+            f"📱 **Status:** Assigned",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
-        logging.info(f"Successfully updated admin group message for request #{request_id}")
-    except Exception as e:
-        logging.error(f"Failed to update admin message: {e}", exc_info=True)
-        # If update fails, send a new message
-        logging.info(f"Sending new message to admin group for request #{request_id}")
+        
+        # Send notification in admin group about assignment
         await context.bot.send_message(
             ADMIN_GROUP_ID,
-            f"📌 **Support Request #{request_id}**\n"
-            f"🔹 **User ID:** `{user_id}`\n"
-            f"📄 **Issue:** {issue}\n"
-            f"👤 **Assigned to:** @{admin_username}",
-            reply_markup=InlineKeyboardMarkup(buttons),
+            f"✅ Request #{request_id} has been assigned to @{admin_username}",
             parse_mode="Markdown"
         )
-        logging.info(f"Successfully sent new message to admin group for request #{request_id}")
-
-    # Notify User with web app URL
-    try:
-        logging.info(f"Attempting to notify user {user_id} about assignment")
-        keyboard = [[InlineKeyboardButton(
-            text="Open Support Chat",
-            web_app=WebAppInfo(url=webapp_url)
-        )]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Log user notification attempt
-        logging.debug(f"User notification button structure: {[[b.text for b in row] for row in keyboard]}")
+        # Notify user about admin assignment
+        try:
+            keyboard = [[InlineKeyboardButton(
+                text="Open Support Chat",
+                web_app=WebAppInfo(url=webapp_url)
+            )]]
+            user_reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await context.bot.send_message(
+                user_id,
+                f"✨ Admin @{admin_username} has been assigned to your request.\n"
+                f"Click below to start chatting!",
+                reply_markup=user_reply_markup
+            )
+            logging.info(f"User {user_id} notified about admin assignment")
+        except Exception as e:
+            logging.error(f"Failed to send notification to user: {e}", exc_info=True)
+            # If WebApp button fails, send simple message
+            await context.bot.send_message(
+                user_id,
+                f"✨ Admin @{admin_username} has been assigned to your request."
+            )
         
-        await context.bot.send_message(
-            user_id,
-            f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open the chat.",
-            reply_markup=reply_markup
-        )
-        logging.info(f"Successfully notified user {user_id} about assignment")
+        await query.answer("✅ You have been assigned to this request!")
+        logging.info(f"Assignment process completed for request #{request_id}")
+        
     except Exception as e:
-        logging.error(f"Failed to send WebApp button to user after assignment: {e}", exc_info=True)
-        # If WebApp button fails, send message without button
-        logging.warning(f"Sending user notification without button for request #{request_id}")
-        await context.bot.send_message(
-            user_id,
-            f"An admin (@{admin_username}) has been assigned to your request.\nClick below to open the chat."
-        )
-    
-    await query.answer("You have been assigned to this request.")
-    logging.info(f"Assignment process completed for request #{request_id}")
+        logging.error(f"Error updating admin message: {e}", exc_info=True)
+        await query.answer("Error updating message, but request was assigned.")
 
 # -------------------------------
 # MAIN FUNCTION
