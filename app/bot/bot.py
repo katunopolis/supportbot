@@ -58,10 +58,10 @@ async def initialize_bot():
             bot = Bot(token=BOT_TOKEN)
             bot_app = (
                 Application.builder()
-                .pool_timeout(POOL_TIMEOUT)
-                .connection_pool_size(MAX_CONNECTIONS)
+                .bot(bot)                        # Must be set first
                 .concurrent_updates(True)
-                .bot(bot)
+                .pool_timeout(POOL_TIMEOUT)      # Pool settings after bot
+                .connection_pool_size(MAX_CONNECTIONS)
                 .build()
             )
             

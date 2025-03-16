@@ -319,43 +319,39 @@
 - Added PYTHONPATH configuration to ensure proper module resolution
 - Enhanced build environment settings for Railway deployment
 
-## [2024-03-16] - Bot Initialization and Connection Pool Optimization
+## [2024-03-16] - Bot Initialization Order Fix
 
 ### Fixed
-- Critical bot initialization error related to connection pool settings
-- Runtime error: "The parameter `pool_timeout` may only be set, if no bot instance was set"
-- Application startup failures due to incorrect initialization order
-- SQL syntax errors in database health checks
+- Critical error: "The parameter `bot` may only be set, if no connection_pool_size was set"
+- Bot initialization sequence order
+- Application startup failures
 
 ### Changed
-- Restructured bot initialization sequence in `app/bot/bot.py`
-- Optimized Application builder chain order:
-  1. Pool timeout settings
-  2. Connection pool size
-  3. Concurrent updates
-  4. Bot instance
-- Enhanced code readability with properly formatted builder chain
-- Improved connection pool management and stability
-- Updated SQL queries to use SQLAlchemy's `text()` function
-
-### Added
-- Comprehensive error handling in bot initialization
-- Database connection health checks
-- Automatic recovery mechanisms
-- Enhanced logging for initialization process
+- Updated Application builder chain order:
+  1. Bot instance (must be first)
+  2. Concurrent updates
+  3. Pool timeout
+  4. Connection pool size
 
 ### Technical Details
 ```python
 # Previous implementation (causing errors)
-bot_app = Application.builder().bot(bot).concurrent_updates(True).pool_timeout(POOL_TIMEOUT).connection_pool_size(MAX_CONNECTIONS).build()
-
-# New implementation (fixed)
 bot_app = (
     Application.builder()
     .pool_timeout(POOL_TIMEOUT)
     .connection_pool_size(MAX_CONNECTIONS)
     .concurrent_updates(True)
     .bot(bot)
+    .build()
+)
+
+# New implementation (fixed)
+bot_app = (
+    Application.builder()
+    .bot(bot)                        # Must be set first
+    .concurrent_updates(True)
+    .pool_timeout(POOL_TIMEOUT)      # Pool settings after bot
+    .connection_pool_size(MAX_CONNECTIONS)
     .build()
 )
 ```

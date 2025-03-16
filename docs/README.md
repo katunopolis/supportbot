@@ -17,10 +17,10 @@ The bot uses a specific initialization sequence to ensure proper connection pool
 ```python
 bot_app = (
     Application.builder()
-    .pool_timeout(POOL_TIMEOUT)      # Must be set first
-    .connection_pool_size(MAX_CONNECTIONS)
+    .bot(bot)                        # Must be set first
     .concurrent_updates(True)
-    .bot(bot)                        # Must be set last
+    .pool_timeout(POOL_TIMEOUT)      # Pool settings after bot
+    .connection_pool_size(MAX_CONNECTIONS)
     .build()
 )
 ```

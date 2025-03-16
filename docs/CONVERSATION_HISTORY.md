@@ -555,10 +555,10 @@ This session focused on ensuring all documentation accurately reflects the curre
    # Fixed implementation with correct order
    bot_app = (
        Application.builder()
-       .pool_timeout(POOL_TIMEOUT)
-       .connection_pool_size(MAX_CONNECTIONS)
+       .bot(bot)                        # Must be set first
        .concurrent_updates(True)
-       .bot(bot)
+       .pool_timeout(POOL_TIMEOUT)      # Pool settings after bot
+       .connection_pool_size(MAX_CONNECTIONS)
        .build()
    )
    ```
@@ -680,4 +680,69 @@ This session focused on ensuring all documentation accurately reflects the curre
    - Thorough testing prevents issues
    - Health checks are essential
    - Monitor pool performance
-   - Regular verification needed 
+   - Regular verification needed
+
+## Session 2024-03-23: Bot Initialization Order Fix
+
+### Issue Investigation
+- Identified critical error in bot initialization: "The parameter `bot` may only be set, if no connection_pool_size was set"
+- Analyzed startup logs showing initialization sequence issues
+- Reviewed python-telegram-bot library requirements for Application builder
+
+### Technical Analysis
+- Root cause: Incorrect order of parameters in Application builder chain
+- Previous implementation had connection pool settings before bot instance
+- Library requires bot instance to be set before any connection pool configuration
+
+### Implementation Process
+```python
+# Previous implementation (causing errors)
+bot_app = (
+    Application.builder()
+    .pool_timeout(POOL_TIMEOUT)
+    .connection_pool_size(MAX_CONNECTIONS)
+    .concurrent_updates(True)
+    .bot(bot)
+    .build()
+)
+
+# Fixed implementation
+bot_app = (
+    Application.builder()
+    .bot(bot)                        # Must be set first
+    .concurrent_updates(True)
+    .pool_timeout(POOL_TIMEOUT)      # Pool settings after bot
+    .connection_pool_size(MAX_CONNECTIONS)
+    .build()
+)
+```
+
+### Key Decisions
+1. Bot instance must be set as first parameter in builder chain
+2. Connection pool settings must follow bot initialization
+3. Concurrent updates placed between bot and pool settings
+4. Documentation updated to reflect correct initialization order
+
+### Testing and Verification
+- Tested bot initialization with new parameter order
+- Verified successful startup without initialization errors
+- Confirmed connection pool settings are properly applied
+- Validated webhook setup and operation
+
+### Documentation Updates
+- Updated README.md with correct initialization sequence
+- Added new entry in CHANGELOG.md
+- Enhanced technical documentation with initialization details
+- Updated deployment configuration documentation
+
+### Lessons Learned
+1. Parameter order is critical in python-telegram-bot Application builder
+2. Bot instance must be initialized before connection pool configuration
+3. Clear documentation of initialization requirements is essential
+4. Proper error messages help identify configuration issues quickly
+
+### Future Considerations
+1. Add validation checks for builder parameter order
+2. Enhance error messages for initialization issues
+3. Create initialization order verification tests
+4. Document builder chain requirements more prominently 
