@@ -257,7 +257,7 @@ async def support_request_handler(payload: dict):
         
         # Build Admin Group Message with Action Buttons
         try:
-            # Create simple button structure first
+            # Create simple button structure
             buttons = [
                 [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
                 [InlineKeyboardButton("Open Support Chat", web_app=WebAppInfo(url=webapp_url))]
@@ -267,10 +267,6 @@ async def support_request_handler(payload: dict):
             logging.info(f"Creating admin buttons for request #{request_id}: {[[b.text for b in row] for row in buttons]}")
             
             reply_markup = InlineKeyboardMarkup(buttons)
-            
-            # Verify button creation
-            if not reply_markup or not reply_markup.inline_keyboard:
-                raise ValueError("Failed to create button markup")
             
             # Send message with explicit parse_mode and disable_web_page_preview
             admin_message = await bot_app.bot.send_message(
@@ -286,46 +282,24 @@ async def support_request_handler(payload: dict):
             # Verify message was sent with buttons
             if not admin_message.reply_markup:
                 logging.warning(f"Message sent but buttons may not be visible for request #{request_id}")
+                # Try to edit the message to add buttons if they're missing
+                try:
+                    await admin_message.edit_reply_markup(reply_markup=reply_markup)
+                    logging.info(f"Successfully added buttons to message for request #{request_id}")
+                except Exception as edit_error:
+                    logging.error(f"Failed to edit message to add buttons: {edit_error}")
         except Exception as e:
-            logging.error(f"Failed to create WebApp button for admin: {e}", exc_info=True)
-            # Instead of falling back to URL button, try to fix the WebApp button
+            logging.error(f"Failed to send admin notification: {e}", exc_info=True)
+            # Simplified retry with basic message
             try:
-                logging.info(f"Retrying WebApp button creation for request #{request_id}")
-                # Retry with explicit WebAppInfo parameters
-                buttons = [
-                    [InlineKeyboardButton(
-                        text="Open Support Chat",
-                        web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat_retry")
-                    )],
-                    [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
-                    [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
-                ]
-                
-                # Log retry button structure
-                logging.debug(f"Retry button structure: {[[b.text for b in row] for row in buttons]}")
-                
-                reply_markup = InlineKeyboardMarkup(buttons)
-                
-                # Verify WebApp button creation again
-                if not reply_markup or not reply_markup.inline_keyboard:
-                    raise ValueError("Failed to create WebApp button markup for admin on retry")
-                
                 await bot_app.bot.send_message(
-                    ADMIN_GROUP_ID,
-                    f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
-                    reply_markup=reply_markup,
-                    parse_mode="Markdown"
-                )
-                logging.info(f"Successfully sent admin notification for request #{request_id} on retry")
-            except Exception as retry_error:
-                logging.error(f"Failed to send WebApp button for admin on retry: {retry_error}", exc_info=True)
-                # If WebApp button fails completely, send message without buttons
-                await bot_app.bot.send_message(
-                    ADMIN_GROUP_ID,
-                    f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+                    chat_id=ADMIN_GROUP_ID,
+                    text=f"📌 *New Support Request #{request_id}*\n🔹 *User ID:* `{user_id}`\n📄 *Issue:* {issue}\n\n⚠️ Error: Could not add buttons",
                     parse_mode="Markdown"
                 )
                 logging.warning(f"Sent admin notification without buttons for request #{request_id}")
+            except Exception as retry_error:
+                logging.error(f"Failed to send admin notification on retry: {retry_error}")
         
         return JSONResponse(content={
             "message": "Support request submitted successfully",
