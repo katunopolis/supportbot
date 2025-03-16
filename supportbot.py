@@ -202,59 +202,120 @@ async def support_request_handler(payload: dict):
         
         # Send stand-by message to user with WebApp button
         try:
+            # Create WebApp button with proper error handling
             keyboard = [[InlineKeyboardButton(
                 text="Open Support Chat",
                 web_app=WebAppInfo(url=webapp_url)
             )]]
             reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Log the button creation attempt
+            logging.info(f"Attempting to send WebApp button to user {user_id} with URL: {webapp_url}")
+            
+            # Verify WebApp button creation
+            if not reply_markup or not reply_markup.inline_keyboard:
+                raise ValueError("Failed to create WebApp button markup")
+            
+            # Send message with WebApp button
             await bot_app.bot.send_message(
                 user_id,
                 "✅ Your support request has been received!\n\n"
                 "An admin will be with you shortly. Please stand by...",
                 reply_markup=reply_markup
             )
+            logging.info(f"Successfully sent WebApp button to user {user_id}")
         except Exception as e:
             logging.error(f"Failed to send WebApp button to user: {e}")
-            # Fallback to regular URL button
-            keyboard = [[InlineKeyboardButton("Open Support Chat", url=webapp_url)]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await bot_app.bot.send_message(
-                user_id,
-                "✅ Your support request has been received!\n\n"
-                "An admin will be with you shortly. Please stand by...",
-                reply_markup=reply_markup
-            )
+            # Instead of falling back to URL button, try to fix the WebApp button
+            try:
+                # Retry with explicit WebAppInfo parameters
+                keyboard = [[InlineKeyboardButton(
+                    text="Open Support Chat",
+                    web_app=WebAppInfo(url=webapp_url, start_parameter="support_chat")
+                )]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                # Verify WebApp button creation again
+                if not reply_markup or not reply_markup.inline_keyboard:
+                    raise ValueError("Failed to create WebApp button markup on retry")
+                
+                await bot_app.bot.send_message(
+                    user_id,
+                    "✅ Your support request has been received!\n\n"
+                    "An admin will be with you shortly. Please stand by...",
+                    reply_markup=reply_markup
+                )
+                logging.info(f"Successfully sent WebApp button to user {user_id} on retry")
+            except Exception as retry_error:
+                logging.error(f"Failed to send WebApp button on retry: {retry_error}")
+                # If WebApp button fails completely, send message without button
+                await bot_app.bot.send_message(
+                    user_id,
+                    "✅ Your support request has been received!\n\n"
+                    "An admin will be with you shortly. Please stand by..."
+                )
         
         # Build Admin Group Message with Action Buttons
         try:
+            # Create WebApp button for admin with proper error handling
             buttons = [
                 [InlineKeyboardButton(
                     text="Open Support Chat",
-                    web_app=WebAppInfo(url=webapp_url)
+                    web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat")
                 )],
                 [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
                 [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(buttons)
+            
+            # Verify WebApp button creation
+            if not reply_markup or not reply_markup.inline_keyboard:
+                raise ValueError("Failed to create WebApp button markup for admin")
+            
+            # Log the admin notification attempt
+            logging.info(f"Attempting to send admin notification for request #{request_id}")
+            
+            await bot_app.bot.send_message(
+                ADMIN_GROUP_ID,
+                f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            logging.info(f"Successfully sent admin notification for request #{request_id}")
         except Exception as e:
             logging.error(f"Failed to create WebApp button for admin: {e}")
-            # Fallback to regular URL button
-            buttons = [
-                [InlineKeyboardButton("Open Support Chat", url=webapp_url)],
-                [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
-                [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(buttons)
-        
-        # Log the admin notification
-        logging.info(f"Sending admin notification for request #{request_id}")
-        
-        await bot_app.bot.send_message(
-            ADMIN_GROUP_ID,
-            f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
+            # Instead of falling back to URL button, try to fix the WebApp button
+            try:
+                # Retry with explicit WebAppInfo parameters
+                buttons = [
+                    [InlineKeyboardButton(
+                        text="Open Support Chat",
+                        web_app=WebAppInfo(url=webapp_url, start_parameter="admin_support_chat_retry")
+                    )],
+                    [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
+                    [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
+                ]
+                reply_markup = InlineKeyboardMarkup(buttons)
+                
+                # Verify WebApp button creation again
+                if not reply_markup or not reply_markup.inline_keyboard:
+                    raise ValueError("Failed to create WebApp button markup for admin on retry")
+                
+                await bot_app.bot.send_message(
+                    ADMIN_GROUP_ID,
+                    f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+                    reply_markup=reply_markup,
+                    parse_mode="Markdown"
+                )
+                logging.info(f"Successfully sent admin notification for request #{request_id} on retry")
+            except Exception as retry_error:
+                logging.error(f"Failed to send WebApp button for admin on retry: {retry_error}")
+                # If WebApp button fails completely, send message without buttons
+                await bot_app.bot.send_message(
+                    ADMIN_GROUP_ID,
+                    f"📌 **New Support Request #{request_id}**\n🔹 **User ID:** `{user_id}`\n📄 **Issue:** {issue}",
+                    parse_mode="Markdown"
+                )
         
         return JSONResponse(content={
             "message": "Support request submitted successfully",
