@@ -758,36 +758,13 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         issue_description = update.message.text
         logging.info(f"Received issue from user {user_id}: {issue_description}")
 
-        # Save issue to database with proper request ID generation
+        # Save issue to database
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
-            
-            # First, get the current max request ID
-            cursor.execute("SELECT MAX(id) FROM requests")
-            current_max_id = cursor.fetchone()[0] or 0
-            logging.info(f"Current max request ID: {current_max_id}")
-            
-            # Insert new request
             cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
             conn.commit()
             request_id = cursor.lastrowid
-            
-            # Verify the new request ID
-            logging.info(f"New request ID generated: {request_id}")
-            
-            # Save initial message
-            cursor.execute("""
-                INSERT INTO messages (request_id, sender_id, sender_type, message)
-                VALUES (?, ?, 'user', ?)
-            """, (request_id, user_id, issue_description))
-            conn.commit()
-            
-            # Verify the request exists
-            cursor.execute("SELECT id FROM requests WHERE id = ?", (request_id,))
-            if not cursor.fetchone():
-                logging.error(f"Request {request_id} not found after insertion")
-                await update.message.reply_text("Error: Failed to create request. Please try again.")
-                return
+            logging.info(f"Saved issue to database with request ID: {request_id}")
 
         # Create web app URL
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
@@ -797,7 +774,7 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             logging.info(f"Creating admin group buttons for request #{request_id}")
             
-            # Create initial button structure
+            # Create WebApp button for admin with proper error handling
             buttons = [
                 [InlineKeyboardButton(
                     text="Open Support Chat",
