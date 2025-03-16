@@ -22,7 +22,7 @@ class MessageCreate(BaseModel):
     sender_type: str
     message: str
 
-@router.post("/requests")
+@router.post("/support-request")
 async def create_request(request: RequestCreate, db: Session = Depends(get_db)):
     """Creates a new support request."""
     try:

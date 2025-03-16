@@ -48,43 +48,22 @@ async def initialize_bot():
     global bot, bot_app
     
     try:
-        # Check database connection first
-        if not await check_database():
-            raise RuntimeError("Failed to establish database connection")
-        
-        # Initialize bot if not already initialized
-        if bot is None:
+        # Only initialize if not already initialized
+        if bot is None or bot_app is None:
+            # Test database connection first
+            if not await check_database():
+                raise RuntimeError("Database connection test failed")
+                
+            # Initialize bot with connection pool settings
             bot = Bot(token=BOT_TOKEN)
-            logging.info("Bot instance created")
-        
-        # Initialize application with optimized settings
-        if bot_app is None:
-            bot_app = (
-                Application.builder()
-                .bot(bot)
-                .concurrent_updates(True)
-                .connection_pool_size(MAX_CONNECTIONS)
-                .connect_timeout(POOL_TIMEOUT)
-                .read_timeout(POOL_TIMEOUT)
-                .write_timeout(POOL_TIMEOUT)
-                .pool_timeout(POOL_TIMEOUT)
-                .build()
-            )
-            logging.info("Bot application created with optimized settings")
-        
-        # Initialize the application
-        await bot_app.initialize()
-        logging.info("Bot application initialized")
-        
-        # Setup handlers
-        await setup_handlers()
-        
-        # Test bot connection
-        me = await bot.get_me()
-        logging.info(f"Bot connection test successful. Username: @{me.username}")
-        
-        return bot_app
-        
+            bot_app = Application.builder().bot(bot).concurrent_updates(True).pool_timeout(POOL_TIMEOUT).connection_pool_size(MAX_CONNECTIONS).build()
+            
+            # Setup command and message handlers
+            await setup_handlers()
+            logging.info("Bot initialized successfully")
+        else:
+            logging.info("Bot already initialized")
+            
     except Exception as e:
         logging.error(f"Error initializing bot: {e}")
         raise

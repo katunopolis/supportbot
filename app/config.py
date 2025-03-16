@@ -10,6 +10,10 @@ TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Error: SUPPORT_BOT_TOKEN is not set. Please add it to environment variables.")
 
+# Connection Pool Configuration
+MAX_CONNECTIONS = 10  # Maximum number of connections in the pool
+POOL_TIMEOUT = 30    # Connection pool timeout in seconds
+
 # Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:

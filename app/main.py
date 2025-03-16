@@ -90,10 +90,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Configure CORS with specific origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://webapp-support-bot-production.up.railway.app",
-        "https://supportbot-production-b784.up.railway.app"
-    ],
+    allow_origins=["*"],  # Allow all origins during development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -184,8 +181,13 @@ async def health_check():
         }
 
 @app.post("/webapp-log")
+@app.options("/webapp-log")  # Handle CORS preflight
 async def webapp_log(request: Request):
     """Handle Railway's webapp logging requests."""
+    # For OPTIONS request, return 200 OK
+    if request.method == "OPTIONS":
+        return {"status": "ok"}
+        
     try:
         body = await request.json()
         logging.info(f"Webapp log: {body}")
