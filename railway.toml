@@ -8,6 +8,9 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 
+[build.env]
+PYTHONPATH = "/app"
+
 # Include webapp-support-bot directory in deployment
 [deploy.include]
 paths = ["webapp-support-bot/**"]
