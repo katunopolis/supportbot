@@ -690,6 +690,12 @@ def setup_logging():
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
     root_logger.addHandler(db_handler)
+    
+    # Add separator to log file
+    with open('bot.log', 'a', encoding='utf-8') as f:
+        f.write('\n' + '='*80 + '\n')
+        f.write(f'Bot started at {datetime.now().isoformat()}\n')
+        f.write('='*80 + '\n\n')
 
 async def set_webhook():
     """Sets Telegram bot webhook for handling messages via FastAPI."""
@@ -761,10 +767,26 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Save issue to database
         with sqlite3.connect("support_requests.db") as conn:
             cursor = conn.cursor()
+            
+            # First, get the current max request ID
+            cursor.execute("SELECT MAX(id) FROM requests")
+            current_max_id = cursor.fetchone()[0] or 0
+            logging.info(f"Current max request ID: {current_max_id}")
+            
+            # Insert new request
             cursor.execute("INSERT INTO requests (user_id, issue) VALUES (?, ?)", (user_id, issue_description))
             conn.commit()
             request_id = cursor.lastrowid
-            logging.info(f"Saved issue to database with request ID: {request_id}")
+            
+            # Verify the new request ID
+            logging.info(f"New request ID generated: {request_id}")
+            
+            # Save initial message
+            cursor.execute("""
+                INSERT INTO messages (request_id, sender_id, sender_type, message)
+                VALUES (?, ?, 'user', ?)
+            """, (request_id, user_id, issue_description))
+            conn.commit()
 
         # Create web app URL
         webapp_url = f"https://webapp-support-bot-production.up.railway.app/chat/{request_id}?user_id={user_id}"
@@ -784,15 +806,9 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
             ]
             
-            # Add user chat button if username is available
-            if update.message.from_user.username:
-                logging.debug(f"Adding user chat button for username: {update.message.from_user.username}")
-                buttons.insert(1, [InlineKeyboardButton("Open User Chat", url=f"https://t.me/{update.message.from_user.username}")])
-            
             # Log button structure
             logging.debug(f"Button structure created: {[[b.text for b in row] for row in buttons]}")
             
-            # Create reply markup
             reply_markup = InlineKeyboardMarkup(buttons)
             
             # Verify button creation
@@ -825,9 +841,6 @@ async def collect_issue(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [InlineKeyboardButton("Assign to me", callback_data=f"assign_{request_id}")],
                     [InlineKeyboardButton("Solve", callback_data=f"solve_{request_id}")]
                 ]
-                
-                if update.message.from_user.username:
-                    buttons.insert(1, [InlineKeyboardButton("Open User Chat", url=f"https://t.me/{update.message.from_user.username}")])
                 
                 # Log retry button structure
                 logging.debug(f"Retry button structure: {[[b.text for b in row] for row in buttons]}")
