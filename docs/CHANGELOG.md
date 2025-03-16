@@ -287,3 +287,21 @@
 - Using SQLite for data storage
 - Implemented proper logging system
 - Added WebApp support with responsive design 
+
+## Version 1.3.0 (2024-03-16)
+
+### Major Changes
+- Complete codebase restructuring into a modular architecture
+- Separated code into logical modules under the `app` directory
+- Created dedicated directories for API routes, bot handlers, database, and logging
+- Improved code organization and maintainability
+- Updated `railway.toml` configuration to use new entry point `run.py`
+
+### Added
+- New modular directory structure:
+  ```
+
+### Infrastructure Updates (2024-03-16)
+- Updated `railway.toml` configuration to use `run.py` as entry point
+- Aligned deployment configuration with new modular structure
+- Enhanced service initialization process

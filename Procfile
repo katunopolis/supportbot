@@ -1,1 +1,2 @@
-web: uvicorn supportbot:fastapi_app --host 0.0.0.0 --port $PORT
+web: python run.py
+release: alembic upgrade head
