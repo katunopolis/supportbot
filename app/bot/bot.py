@@ -2,26 +2,25 @@ import logging
 import asyncio
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from app.config import TOKEN, WEBHOOK_URL
+from app.config import WEBHOOK_URL, MAX_CONNECTIONS, POOL_TIMEOUT
 from app.bot.handlers.start import start, request_support
 from app.bot.handlers.support import collect_issue
 from app.bot.handlers.admin import assign_request
-from app.database.session import get_db
+from app.database.session import get_db, SessionLocal
+from sqlalchemy import text
+import os
+from dotenv import load_dotenv
 
-# Initialize bot and application with optimized settings
-bot = Bot(token=TOKEN)
-bot_app = (
-    Application.builder()
-    .token(TOKEN)
-    .job_queue(None)
-    .concurrent_updates(True)  # Enable concurrent update handling
-    .connection_pool_size(100)  # Increase connection pool size
-    .connect_timeout(30.0)  # Increase connection timeout
-    .read_timeout(30.0)  # Increase read timeout
-    .write_timeout(30.0)  # Increase write timeout
-    .pool_timeout(3.0)  # Set pool timeout
-    .build()
-)
+load_dotenv()
+
+# Get bot token from environment variable
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is not set")
+
+# Initialize bot and application as None
+bot = None
+bot_app = None
 
 # Command rate limiting
 command_semaphore = asyncio.Semaphore(20)  # Limit concurrent command processing
@@ -31,17 +30,72 @@ async def rate_limited_handler(handler, update, context):
     async with command_semaphore:
         return await handler(update, context)
 
-async def initialize_bot():
-    """Initialize bot and register handlers with optimized settings."""
+async def check_database():
+    """Check database connection with proper error handling."""
     try:
-        # Initialize the bot application
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.commit()
+        db.close()
+        logging.info("Database connection test successful")
+        return True
+    except Exception as e:
+        logging.error(f"Database connection test failed: {e}")
+        return False
+
+async def initialize_bot():
+    """Initialize bot application with optimized settings and proper error handling."""
+    global bot, bot_app
+    
+    try:
+        # Check database connection first
+        if not await check_database():
+            raise RuntimeError("Failed to establish database connection")
+        
+        # Initialize bot if not already initialized
+        if bot is None:
+            bot = Bot(token=BOT_TOKEN)
+            logging.info("Bot instance created")
+        
+        # Initialize application with optimized settings
+        if bot_app is None:
+            bot_app = (
+                Application.builder()
+                .bot(bot)
+                .concurrent_updates(True)
+                .connection_pool_size(MAX_CONNECTIONS)
+                .connect_timeout(POOL_TIMEOUT)
+                .read_timeout(POOL_TIMEOUT)
+                .write_timeout(POOL_TIMEOUT)
+                .pool_timeout(POOL_TIMEOUT)
+                .build()
+            )
+            logging.info("Bot application created with optimized settings")
+        
+        # Initialize the application
         await bot_app.initialize()
         logging.info("Bot application initialized")
         
-        # Create connection pool for database
-        db = next(get_db())
+        # Setup handlers
+        await setup_handlers()
         
-        # Register handlers with rate limiting
+        # Test bot connection
+        me = await bot.get_me()
+        logging.info(f"Bot connection test successful. Username: @{me.username}")
+        
+        return bot_app
+        
+    except Exception as e:
+        logging.error(f"Error initializing bot: {e}")
+        raise
+
+async def setup_handlers():
+    """Setup bot handlers with rate limiting and proper error handling."""
+    if bot_app is None:
+        raise RuntimeError("Bot application not initialized")
+        
+    try:
+        # Register command handlers
         bot_app.add_handler(
             CommandHandler(
                 "start",
@@ -55,78 +109,76 @@ async def initialize_bot():
             )
         )
         
-        # Message handler with database session
+        # Message handler
         bot_app.add_handler(
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND,
                 lambda u, c: rate_limited_handler(
-                    lambda u, c: collect_issue(u, c, db),
+                    lambda u, c: collect_issue(u, c, next(get_db())),
                     u, c
                 )
             )
         )
         
-        # Callback query handler with database session
+        # Callback query handler
         bot_app.add_handler(
             CallbackQueryHandler(
                 lambda u, c: rate_limited_handler(
-                    lambda u, c: assign_request(u, c, db),
+                    lambda u, c: assign_request(u, c, next(get_db())),
                     u, c
                 )
             )
         )
         
-        logging.info("Bot handlers registered with rate limiting")
-        
-        # Test bot connection with timeout
-        async with asyncio.timeout(5.0):
-            me = await bot.get_me()
-            logging.info(f"Bot connection test successful. Bot username: @{me.username}")
+        logging.info("Bot handlers registered successfully")
         
     except Exception as e:
-        logging.error(f"Error initializing bot: {e}")
+        logging.error(f"Error setting up handlers: {e}")
         raise
 
 async def setup_webhook():
-    """Set up webhook with retry logic and validation."""
+    """Setup webhook with retry logic and proper error handling."""
+    if bot is None:
+        raise RuntimeError("Bot not initialized")
+        
     max_retries = 3
-    retry_delay = 5
+    retry_delay = 2
     
     for attempt in range(max_retries):
         try:
-            # Delete existing webhook with timeout
-            async with asyncio.timeout(5.0):
-                await bot.delete_webhook()
-                logging.info("Existing webhook removed")
+            # Remove any existing webhook
+            await bot.delete_webhook()
             
-            # Set new webhook with timeout
-            async with asyncio.timeout(5.0):
-                success = await bot.set_webhook(WEBHOOK_URL)
-                if not success:
-                    raise ValueError("Telegram did not confirm webhook setup")
+            # Set up the new webhook
+            await bot.set_webhook(
+                url=WEBHOOK_URL,
+                allowed_updates=["message", "callback_query"],
+                max_connections=MAX_CONNECTIONS,
+                drop_pending_updates=True
+            )
+            
+            # Verify webhook
+            webhook_info = await bot.get_webhook_info()
+            if webhook_info.url != WEBHOOK_URL:
+                raise ValueError(f"Webhook URL mismatch: {webhook_info.url} != {WEBHOOK_URL}")
                 
-            # Verify webhook with timeout
-            async with asyncio.timeout(5.0):
-                webhook_info = await bot.get_webhook_info()
-                if webhook_info.url != WEBHOOK_URL:
-                    raise ValueError(f"Webhook URL mismatch. Expected {WEBHOOK_URL}, got {webhook_info.url}")
-                
-                if webhook_info.last_error_date:
-                    logging.warning(f"Webhook last error: {webhook_info.last_error_message} at {webhook_info.last_error_date}")
-                
-                logging.info(f"Webhook successfully set and verified: {webhook_info.url}")
-                return
-                
+            logging.info(f"Webhook set successfully to {WEBHOOK_URL}")
+            return
+            
         except Exception as e:
             if attempt < max_retries - 1:
                 logging.warning(f"Webhook setup attempt {attempt + 1} failed: {e}")
                 await asyncio.sleep(retry_delay)
             else:
-                logging.error(f"Failed to set webhook after {max_retries} attempts: {e}")
+                logging.error(f"All webhook setup attempts failed: {e}")
                 raise
 
 async def remove_webhook():
-    """Remove the bot's webhook."""
+    """Remove webhook on shutdown with proper error handling."""
+    if bot is None:
+        logging.warning("Bot not initialized, no webhook to remove")
+        return
+        
     try:
         await bot.delete_webhook()
         logging.info("Webhook removed successfully")
@@ -134,12 +186,13 @@ async def remove_webhook():
         logging.error(f"Error removing webhook: {e}")
         raise
 
-async def process_update(update_dict: dict):
-    """Process incoming update from webhook."""
+async def process_update(update: dict):
+    """Process incoming update from webhook with proper error handling."""
+    if bot_app is None:
+        raise RuntimeError("Bot application not initialized")
+        
     try:
-        update = Update.de_json(update_dict, bot_app.bot)
-        await bot_app.process_update(update)
-        return True
+        await bot_app.update_queue.put(Update.de_json(update, bot))
     except Exception as e:
         logging.error(f"Error processing update: {e}")
-        return False 
+        raise 

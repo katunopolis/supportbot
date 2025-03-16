@@ -1,11 +1,12 @@
 import os
 import logging
 import time
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from dotenv import load_dotenv
 from app.database.models import Base
+from sqlalchemy.ext.declarative import declarative_base
 
 # Load environment variables
 load_dotenv()
@@ -60,8 +61,9 @@ def get_db():
     """Database session dependency with error handling."""
     db = SessionLocal()
     try:
-        # Verify connection is active
-        db.execute("SELECT 1")
+        # Test connection with proper text() usage
+        db.execute(text("SELECT 1"))
+        db.commit()
         yield db
     except Exception as e:
         logging.error(f"Database connection error: {e}")

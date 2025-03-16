@@ -183,6 +183,20 @@ async def health_check():
             "error": str(e)
         }
 
+@app.post("/webapp-log")
+async def webapp_log(request: Request):
+    """Handle Railway's webapp logging requests."""
+    try:
+        body = await request.json()
+        logging.info(f"Webapp log: {body}")
+        return {"status": "ok"}
+    except Exception as e:
+        logging.error(f"Error processing webapp log: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler to log errors and return appropriate response."""
