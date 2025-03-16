@@ -148,6 +148,7 @@ async def health_check():
         # Check database connection
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+            conn.commit()  # Add explicit commit
             
         # Get system metrics if psutil is available
         system_metrics = {}

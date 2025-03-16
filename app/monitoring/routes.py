@@ -5,6 +5,7 @@ from pathlib import Path
 from app.monitoring.metrics import metrics_manager
 from app.database.session import engine
 from sqlalchemy import text
+import logging
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -23,7 +24,9 @@ async def get_metrics():
     try:
         # Get database connection stats
         with engine.connect() as conn:
-            active_connections = conn.execute(text("SELECT count(*) FROM pg_stat_activity")).scalar()
+            result = conn.execute(text("SELECT count(*) FROM pg_stat_activity"))
+            active_connections = result.scalar()
+            conn.commit()
             
         return {
             "system": metrics_manager.get_system_metrics(),
@@ -33,6 +36,7 @@ async def get_metrics():
             }
         }
     except Exception as e:
+        logging.error(f"Error collecting metrics: {e}")
         return {"error": str(e)}
 
 @router.get("/api/requests")
