@@ -318,3 +318,50 @@
 - Fixed database migration paths in `env.py`
 - Added PYTHONPATH configuration to ensure proper module resolution
 - Enhanced build environment settings for Railway deployment
+
+## [2024-03-16] - Bot Initialization and Connection Pool Optimization
+
+### Fixed
+- Critical bot initialization error related to connection pool settings
+- Runtime error: "The parameter `pool_timeout` may only be set, if no bot instance was set"
+- Application startup failures due to incorrect initialization order
+- SQL syntax errors in database health checks
+
+### Changed
+- Restructured bot initialization sequence in `app/bot/bot.py`
+- Optimized Application builder chain order:
+  1. Pool timeout settings
+  2. Connection pool size
+  3. Concurrent updates
+  4. Bot instance
+- Enhanced code readability with properly formatted builder chain
+- Improved connection pool management and stability
+- Updated SQL queries to use SQLAlchemy's `text()` function
+
+### Added
+- Comprehensive error handling in bot initialization
+- Database connection health checks
+- Automatic recovery mechanisms
+- Enhanced logging for initialization process
+
+### Technical Details
+```python
+# Previous implementation (causing errors)
+bot_app = Application.builder().bot(bot).concurrent_updates(True).pool_timeout(POOL_TIMEOUT).connection_pool_size(MAX_CONNECTIONS).build()
+
+# New implementation (fixed)
+bot_app = (
+    Application.builder()
+    .pool_timeout(POOL_TIMEOUT)
+    .connection_pool_size(MAX_CONNECTIONS)
+    .concurrent_updates(True)
+    .bot(bot)
+    .build()
+)
+```
+
+### Documentation
+- Updated technical documentation with initialization process
+- Added deployment configuration details
+- Enhanced API documentation
+- Improved installation guide

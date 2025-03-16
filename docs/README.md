@@ -2,6 +2,185 @@
 
 A Telegram bot for managing support requests with a modern web interface and PostgreSQL backend.
 
+## Latest Updates (2024-03-16)
+
+- Fixed critical connection pool configuration issues
+- Optimized bot initialization sequence
+- Enhanced error handling and recovery mechanisms
+- Improved deployment configuration for Railway
+
+## Technical Details
+
+### Bot Initialization
+The bot uses a specific initialization sequence to ensure proper connection pool management:
+
+```python
+bot_app = (
+    Application.builder()
+    .pool_timeout(POOL_TIMEOUT)      # Must be set first
+    .connection_pool_size(MAX_CONNECTIONS)
+    .concurrent_updates(True)
+    .bot(bot)                        # Must be set last
+    .build()
+)
+```
+
+### Connection Pool Configuration
+```python
+# Environment variables
+POOL_TIMEOUT = 30  # seconds
+MAX_CONNECTIONS = 100
+```
+
+### Health Checks
+The application includes comprehensive health checks:
+```python
+async def check_database():
+    try:
+        async with Session() as session:
+            await session.execute(text("SELECT 1"))
+            await session.commit()
+            return True
+    except Exception as e:
+        logging.error(f"Database connection test failed: {e}")
+        return False
+```
+
+## Quick Start
+
+### Prerequisites
+- Python 3.11 or higher
+- PostgreSQL database
+- Telegram Bot Token
+- Railway account (for deployment)
+
+### Installation
+```bash
+git clone https://github.com/yourusername/support-bot.git
+cd support-bot
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+.\venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+```
+
+### Configuration
+Create `.env` file:
+```env
+SUPPORT_BOT_TOKEN=your_telegram_bot_token
+DATABASE_URL=postgresql://user:password@host:port/dbname
+POOL_TIMEOUT=30
+MAX_CONNECTIONS=100
+```
+
+### Run Locally
+```bash
+python run.py
+```
+
+## Documentation
+
+### Core Documentation
+- [Installation Guide](INSTALLATION.md) - Detailed setup instructions
+- [Deployment Guide](DEPLOYMENT.md) - Railway deployment walkthrough
+- [Technical Documentation](TECHNICAL.md) - Architecture and components
+- [API Documentation](API.md) - API reference
+- [Changelog](CHANGELOG.md) - Version history
+
+### Additional Resources
+- [Database Guide](DATABASE.md) - Database management
+- [Monitoring Guide](MONITORING.md) - System monitoring
+
+## Project Structure
+```
+support-bot/
+├── app/
+│   ├── __init__.py
+│   ├── main.py           # FastAPI application
+│   ├── config.py         # Configuration
+│   ├── api/
+│   │   └── routes/       # API endpoints
+│   ├── bot/
+│   │   ├── bot.py       # Bot initialization
+│   │   └── handlers/    # Command handlers
+│   ├── database/
+│   │   ├── models.py    # Database models
+│   │   └── session.py   # Database connection
+│   └── logging/
+│       └── setup.py     # Logging configuration
+├── docs/                # Documentation
+├── alembic/             # Database migrations
+└── run.py              # Entry point
+```
+
+## Key Features
+
+### Bot Initialization
+- Optimized connection pool management
+- Proper initialization sequence
+- Comprehensive error handling
+- Automatic recovery mechanisms
+
+### Database Integration
+- PostgreSQL with SQLAlchemy ORM
+- Connection pooling
+- Alembic migrations
+- Optimized queries
+
+### API Endpoints
+- Support request management
+- Chat functionality
+- Logging and monitoring
+- Health checks
+
+### Error Handling
+- Comprehensive error catching
+- Automatic recovery mechanisms
+- Enhanced logging for debugging
+- Connection pool monitoring
+
+### Monitoring
+- Real-time metrics collection
+- Health check system
+- Performance tracking
+- Error monitoring
+
+## Best Practices
+
+### Connection Pool Management
+1. Configure pool settings before bot instance
+2. Monitor connection usage
+3. Implement proper timeout handling
+4. Regular health checks
+
+### Error Handling
+1. Use comprehensive error catching
+2. Implement recovery mechanisms
+3. Maintain detailed logging
+4. Monitor system health
+
+### Testing
+1. Regular health checks
+2. Connection pool monitoring
+3. Performance verification
+4. Error recovery testing
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For issues and feature requests, please use the GitHub issue tracker.
+
 ## Project Structure
 
 ```

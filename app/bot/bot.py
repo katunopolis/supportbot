@@ -56,7 +56,14 @@ async def initialize_bot():
                 
             # Initialize bot with connection pool settings
             bot = Bot(token=BOT_TOKEN)
-            bot_app = Application.builder().bot(bot).concurrent_updates(True).pool_timeout(POOL_TIMEOUT).connection_pool_size(MAX_CONNECTIONS).build()
+            bot_app = (
+                Application.builder()
+                .pool_timeout(POOL_TIMEOUT)
+                .connection_pool_size(MAX_CONNECTIONS)
+                .concurrent_updates(True)
+                .bot(bot)
+                .build()
+            )
             
             # Setup command and message handlers
             await setup_handlers()

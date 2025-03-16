@@ -5,26 +5,48 @@ The database layer is optimized for high concurrency and performance using SQLAl
 
 ## Connection Pool Configuration
 
-### Settings
+### Overview
+The application uses SQLAlchemy's connection pooling with optimized settings for better performance and stability. The connection pool is configured before the bot initialization to ensure proper resource management.
+
+### Key Settings
 ```python
-POOL_SIZE = 20          # Maximum number of persistent connections
-MAX_OVERFLOW = 10       # Maximum number of connections beyond pool_size
-POOL_TIMEOUT = 30       # Timeout for getting a connection from the pool
-POOL_RECYCLE = 1800    # Recycle connections after 30 minutes
+POOL_TIMEOUT = 30  # seconds
+MAX_CONNECTIONS = 100
 ```
 
-### Implementation
+### Configuration Order
+1. Pool timeout configuration
+2. Connection pool size setting
+3. Database session setup
+4. Bot initialization
+
+### Implementation Details
+
+#### Database Session Setup
 ```python
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
 engine = create_engine(
     DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=POOL_SIZE,
-    max_overflow=MAX_OVERFLOW,
-    pool_timeout=POOL_TIMEOUT,
-    pool_recycle=POOL_RECYCLE,
-    pool_pre_ping=True,  # Enable connection health checks
-    echo_pool=True      # Log pool events for monitoring
+    pool_pre_ping=True,
+    pool_size=MAX_CONNECTIONS,
+    pool_timeout=POOL_TIMEOUT
 )
+```
+
+#### Health Check Implementation
+```python
+async def check_database():
+    """Test database connection with proper error handling."""
+    try:
+        async with Session() as session:
+            await session.execute(text("SELECT 1"))
+            await session.commit()
+            return True
+    except Exception as e:
+        logging.error(f"Database connection test failed: {e}")
+        return False
 ```
 
 ## Connection Management
@@ -154,8 +176,7 @@ db.query(Model).join(RelatedModel).filter(RelatedModel.status == 'active')
 ```python
 def get_pool_stats():
     return {
-        "pool_size": POOL_SIZE,
-        "max_overflow": MAX_OVERFLOW,
+        "pool_size": MAX_CONNECTIONS,
         "active_connections": engine.pool.checkedin()
     }
 ```
@@ -224,4 +245,61 @@ def monitor_query_time(query_func):
 ### 3. Troubleshooting
 - Check connection pool logs
 - Monitor query performance
-- Track error patterns 
+- Track error patterns
+
+## Database Schema
+
+### Request Model
+```python
+class Request:
+    id: int
+    user_id: int
+    issue: str
+    assigned_admin: Optional[int]
+    status: str
+    solution: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+```
+
+### Message Model
+```python
+class Message:
+    id: int
+    request_id: int
+    sender_id: int
+    sender_type: str  # 'user' or 'admin'
+    message: str
+    timestamp: datetime
+```
+
+### Log Model
+```python
+class Log:
+    id: int
+    timestamp: datetime
+    level: str
+    message: str
+    context: str
+```
+
+## Migration Management
+
+### Alembic Usage
+```bash
+# Create migration
+alembic revision --autogenerate -m "description"
+
+# Apply migration
+alembic upgrade head
+
+# Rollback
+alembic downgrade -1
+```
+
+### Best Practices
+1. Regular backups before migrations
+2. Test migrations in staging
+3. Document changes
+4. Version control migrations
+5. Maintain rollback plans 
