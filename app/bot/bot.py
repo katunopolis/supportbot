@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get bot token from environment variable
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("SUPPORT_BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable is not set")
+    raise ValueError("SUPPORT_BOT_TOKEN environment variable is not set")
 
 # Initialize bot and application as None
 bot = None
