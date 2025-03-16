@@ -23,27 +23,6 @@ webhook_times = []
 last_errors = []
 start_time = time.time()
 
-# Performance monitoring middleware
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    
-    # Store request time for monitoring
-    request_times.append({
-        'path': request.url.path,
-        'method': request.method,
-        'time': process_time,
-        'timestamp': datetime.now().isoformat()
-    })
-    # Keep only last 1000 requests
-    if len(request_times) > 1000:
-        request_times.pop(0)
-        
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events for the FastAPI application."""
@@ -85,6 +64,27 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
+# Performance monitoring middleware
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    
+    # Store request time for monitoring
+    request_times.append({
+        'path': request.url.path,
+        'method': request.method,
+        'time': process_time,
+        'timestamp': datetime.now().isoformat()
+    })
+    # Keep only last 1000 requests
+    if len(request_times) > 1000:
+        request_times.pop(0)
+        
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+
 # Add compression middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
@@ -106,21 +106,9 @@ templates_path = Path(__file__).parent / "monitoring" / "templates"
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 # Include routers with response caching
-app.include_router(
-    chat.router,
-    prefix="/api",
-    tags=["chat"]
-)
-app.include_router(
-    support.router,
-    prefix="/api",
-    tags=["support"]
-)
-app.include_router(
-    logs.router,
-    prefix="/api",
-    tags=["logs"]
-)
+app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(support.router, prefix="/api", tags=["support"])
+app.include_router(logs.router, prefix="/api", tags=["logs"])
 app.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
 
 async def process_update_background(update: dict, background_tasks: BackgroundTasks):
@@ -155,13 +143,29 @@ async def webhook(update: dict, background_tasks: BackgroundTasks):
 
 @app.get("/health")
 async def health_check():
-    """Enhanced health check endpoint with system status."""
-    return {
-        "status": "healthy",
-        "version": "1.2.0",
-        "database": "connected",
-        "bot": "running"
-    }
+    """Health check endpoint for Railway."""
+    try:
+        # Check database connection
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            
+        # Check bot connection
+        bot_status = "running" if bot_app else "not_initialized"
+        
+        return {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "database": "connected",
+            "bot": bot_status,
+            "version": "1.2.0"
+        }
+    except Exception as e:
+        logging.error(f"Health check failed: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "timestamp": time.time(),
+            "error": str(e)
+        }
 
 @app.get("/monitoring/metrics")
 async def get_metrics():
