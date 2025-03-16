@@ -8,7 +8,8 @@ from app.bot.handlers.support import collect_issue
 from app.bot.handlers.admin import assign_request
 from app.database.session import get_db
 
-# Initialize bot application with optimized settings
+# Initialize bot and application with optimized settings
+bot = Bot(token=TOKEN)
 bot_app = (
     Application.builder()
     .token(TOKEN)
@@ -33,7 +34,7 @@ async def rate_limited_handler(handler, update, context):
 async def initialize_bot():
     """Initialize bot and register handlers with optimized settings."""
     try:
-        # Initialize the bot
+        # Initialize the bot application
         await bot_app.initialize()
         logging.info("Bot application initialized")
         
@@ -78,7 +79,6 @@ async def initialize_bot():
         logging.info("Bot handlers registered with rate limiting")
         
         # Test bot connection with timeout
-        bot = Bot(token=TOKEN)
         async with asyncio.timeout(5.0):
             me = await bot.get_me()
             logging.info(f"Bot connection test successful. Bot username: @{me.username}")
@@ -94,8 +94,6 @@ async def setup_webhook():
     
     for attempt in range(max_retries):
         try:
-            bot = Bot(token=TOKEN)
-            
             # Delete existing webhook with timeout
             async with asyncio.timeout(5.0):
                 await bot.delete_webhook()
@@ -130,7 +128,6 @@ async def setup_webhook():
 async def remove_webhook():
     """Remove the bot's webhook."""
     try:
-        bot = Bot(token=TOKEN)
         await bot.delete_webhook()
         logging.info("Webhook removed successfully")
     except Exception as e:

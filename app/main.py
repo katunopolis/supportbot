@@ -8,7 +8,6 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 import logging
 import time
-import psutil
 from datetime import datetime
 from sqlalchemy import text
 from app.api.routes import chat, support, logs
@@ -109,7 +108,8 @@ app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(support.router, prefix="/api", tags=["support"])
 app.include_router(logs.router, prefix="/api", tags=["logs"])
-app.include_router(monitoring_router, prefix="/monitoring", tags=["monitoring"])
+# Mount monitoring routes without prefix since they already include /monitoring
+app.include_router(monitoring_router, tags=["monitoring"])
 
 async def process_update_background(update: dict, background_tasks: BackgroundTasks):
     """Process Telegram update in the background."""
@@ -149,6 +149,20 @@ async def health_check():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
             
+        # Get system metrics if psutil is available
+        system_metrics = {}
+        try:
+            import psutil
+            system_metrics = {
+                "cpu_percent": psutil.cpu_percent(),
+                "memory_percent": psutil.virtual_memory().percent
+            }
+        except ImportError:
+            logging.warning("psutil not available - system metrics will be limited")
+            system_metrics = {
+                "note": "System metrics unavailable - psutil not installed"
+            }
+            
         # Check bot connection
         bot_status = "running" if bot_app else "not_initialized"
         
@@ -157,7 +171,8 @@ async def health_check():
             "timestamp": time.time(),
             "database": "connected",
             "bot": bot_status,
-            "version": "1.2.0"
+            "version": "1.2.0",
+            "system": system_metrics
         }
     except Exception as e:
         logging.error(f"Health check failed: {str(e)}")
@@ -167,100 +182,25 @@ async def health_check():
             "error": str(e)
         }
 
-@app.get("/monitoring/metrics")
-async def get_metrics():
-    """Get detailed system metrics."""
-    try:
-        # Database connection stats
-        with engine.connect() as conn:
-            active_connections = conn.execute(text("SELECT count(*) FROM pg_stat_activity")).scalar()
-            
-        # Calculate average response times
-        avg_response_time = sum(r['time'] for r in request_times) / len(request_times) if request_times else 0
-        webhook_avg_time = sum(t for t in webhook_times) / len(webhook_times) if webhook_times else 0
-        
-        # System metrics
-        cpu_percent = psutil.cpu_percent()
-        memory = psutil.virtual_memory()
-        
-        # Bot metrics
-        bot_info = {
-            "concurrent_updates": bot_app.concurrent_updates,
-            "connection_pool_size": bot_app.connection_pool_size,
-            "running_webhooks": len(webhook_times)
-        }
-        
-        # Database pool metrics
-        db_pool_info = {
-            "pool_size": POOL_SIZE,
-            "max_overflow": MAX_OVERFLOW,
-            "active_connections": active_connections
-        }
-        
-        return {
-            "system": {
-                "cpu_percent": cpu_percent,
-                "memory_percent": memory.percent,
-                "memory_available": memory.available,
-                "uptime_seconds": time.time() - start_time
-            },
-            "application": {
-                "average_response_time": avg_response_time,
-                "webhook_average_time": webhook_avg_time,
-                "total_requests": len(request_times),
-                "recent_errors": last_errors[-10:],  # Last 10 errors
-            },
-            "database": db_pool_info,
-            "bot": bot_info
-        }
-    except Exception as e:
-        logging.error(f"Error collecting metrics: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Failed to collect metrics"}
-        )
-
-@app.get("/monitoring/requests")
-async def get_request_metrics(limit: int = 100):
-    """Get detailed request timing information."""
-    return {
-        "request_count": len(request_times),
-        "recent_requests": request_times[-limit:]
-    }
-
-@app.get("/monitoring/errors")
-async def get_error_metrics():
-    """Get recent error information."""
-    return {
-        "error_count": len(last_errors),
-        "recent_errors": last_errors[-50:]  # Last 50 errors
-    }
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler with error tracking."""
-    error_id = logging.error(f"Unhandled exception: {exc}", exc_info=True)
-    
-    # Store error for monitoring
+    """Global exception handler to log errors and return appropriate response."""
     error_info = {
         "timestamp": datetime.now().isoformat(),
-        "path": request.url.path,
+        "path": str(request.url),
         "method": request.method,
-        "error": str(exc),
-        "error_id": error_id
+        "error": str(exc)
     }
+    
+    # Add to error tracking
     last_errors.append(error_info)
-    # Keep only last 1000 errors
-    if len(last_errors) > 1000:
+    if len(last_errors) > 100:  # Keep only last 100 errors
         last_errors.pop(0)
         
+    logging.error(f"Global error handler: {error_info}")
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "An unexpected error occurred",
-            "error_id": error_id,
-            "path": request.url.path
-        }
+        content={"error": str(exc)}
     )
 
 # Initialize bot
