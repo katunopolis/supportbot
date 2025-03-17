@@ -53,16 +53,17 @@ async def initialize_bot():
             raise RuntimeError("Database connection test failed")
 
         if bot is None or bot_app is None:
-            bot = Bot(token=BOT_TOKEN)  # Use the validated BOT_TOKEN
+            bot = Bot(token=BOT_TOKEN)
             bot_app = (
                 Application.builder()
-                .pool_timeout(POOL_TIMEOUT)      # Pool settings must be first
-                .connection_pool_size(MAX_CONNECTIONS)
-                .concurrent_updates(True)
-                .bot(bot)                        # Bot instance must be last
+                .bot(bot)                        # Bot instance must be first
+                .concurrent_updates(True)        # Then other settings
+                .connection_pool_size(MAX_CONNECTIONS)  # Pool settings last
+                .pool_timeout(POOL_TIMEOUT)
                 .build()
             )
             logging.info("Bot initialized successfully")
+            await setup_handlers()  # Setup handlers after initialization
             return True
         return True
     except Exception as e:
