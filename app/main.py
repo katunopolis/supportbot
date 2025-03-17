@@ -103,7 +103,7 @@ app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 # Include routers with response caching
 app.include_router(chat.router, prefix="/api", tags=["chat"])
-app.include_router(support.router, prefix="/api", tags=["support"])
+app.include_router(support.router, tags=["support"])  # Remove /api prefix for support routes
 app.include_router(logs.router, prefix="/api", tags=["logs"])
 # Mount monitoring routes without prefix since they already include /monitoring
 app.include_router(monitoring_router, tags=["monitoring"])

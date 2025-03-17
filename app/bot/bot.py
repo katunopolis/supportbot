@@ -54,14 +54,16 @@ async def initialize_bot():
 
         if bot is None or bot_app is None:
             bot = Bot(token=BOT_TOKEN)
-            bot_app = (
+            # Create application builder and set request parameters first
+            builder = (
                 Application.builder()
-                .bot(bot)                        # Bot instance must be first
-                .concurrent_updates(True)        # Then other settings
-                .connection_pool_size(MAX_CONNECTIONS)  # Pool settings last
+                .connection_pool_size(MAX_CONNECTIONS)
                 .pool_timeout(POOL_TIMEOUT)
-                .build()
+                .concurrent_updates(True)
             )
+            # Then set the bot instance
+            bot_app = builder.bot(bot).build()
+            
             logging.info("Bot initialized successfully")
             await setup_handlers()  # Setup handlers after initialization
             return True
