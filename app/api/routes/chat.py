@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+import logging
 
 from app.database.session import get_db
 from app.database.models import Request, Message
@@ -49,27 +50,37 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.get("/{request_id}", response_model=ChatResponse)
 async def get_chat(request_id: int, db: Session = Depends(get_db)):
     """Get chat messages for a specific support request"""
-    # Check if request exists
-    request = db.query(Request).filter(Request.id == request_id).first()
-    if not request:
+    try:
+        # Check if request exists
+        request = db.query(Request).filter(Request.id == request_id).first()
+        if not request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Support request with ID {request_id} not found"
+            )
+        
+        # Get all messages for this request
+        messages = db.query(Message).filter(Message.request_id == request_id).all()
+        
+        # Create response object with request and messages
+        response = {
+            "request_id": request.id,
+            "user_id": request.user_id,
+            "status": request.status,
+            "created_at": request.created_at,
+            "updated_at": request.updated_at,
+            "issue": request.issue,
+            "solution": request.solution,
+            "messages": messages
+        }
+        
+        return response
+    except Exception as e:
+        logging.error(f"Error retrieving chat: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Support request with ID {request_id} not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving chat: {str(e)}"
         )
-    
-    # Get all messages for this request
-    messages = db.query(Message).filter(Message.request_id == request_id).order_by(Message.timestamp.asc()).all()
-    
-    return {
-        "request_id": request.id,
-        "user_id": request.user_id,
-        "status": request.status,
-        "created_at": request.created_at,
-        "updated_at": request.updated_at,
-        "issue": request.issue,
-        "solution": request.solution,
-        "messages": messages
-    }
 
 @router.post("/{request_id}/messages", response_model=MessageResponse)
 async def add_message(
@@ -137,4 +148,45 @@ async def get_chat_list(db: Session = Depends(get_db)):
         return chat_list
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{request_id}/messages", response_model=List[MessageResponse])
+async def get_messages_since(
+    request_id: int, 
+    since: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get messages for a request since a specific timestamp"""
+    try:
+        # Check if request exists
+        request = db.query(Request).filter(Request.id == request_id).first()
+        if not request:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Support request with ID {request_id} not found"
+            )
+        
+        # Build query for messages
+        query = db.query(Message).filter(Message.request_id == request_id)
+        
+        # Filter by timestamp if provided
+        if since:
+            try:
+                since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+                query = query.filter(Message.timestamp > since_dt)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid timestamp format. Use ISO format."
+                )
+        
+        # Get messages ordered by timestamp
+        messages = query.order_by(Message.timestamp.asc()).all()
+        
+        return messages
+    except Exception as e:
+        logging.error(f"Error retrieving messages: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving messages: {str(e)}"
+        ) 

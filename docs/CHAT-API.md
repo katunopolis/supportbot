@@ -105,6 +105,40 @@ Retrieves a list of all support requests with their latest messages.
 ]
 ```
 
+### Get Messages Since Timestamp
+
+Retrieves messages for a specific support request that were created after a given timestamp.
+
+**Endpoint:** `GET /api/chat/{request_id}/messages?since={timestamp}`
+
+**Parameters:**
+- `request_id`: The ID of the support request
+- `since`: (Optional) ISO format timestamp to filter messages created after this time
+
+**Response Model:** List of `MessageResponse`
+
+**Sample Response:**
+```json
+[
+  {
+    "id": 3,
+    "request_id": 123,
+    "sender_id": 987654321,
+    "sender_type": "admin",
+    "message": "Have you tried resetting your password?",
+    "timestamp": "2025-03-17T11:50:00"
+  },
+  {
+    "id": 4,
+    "request_id": 123,
+    "sender_id": 456789012,
+    "sender_type": "user",
+    "message": "Yes, I tried that but it didn't work",
+    "timestamp": "2025-03-17T11:55:00"
+  }
+]
+```
+
 ## Data Models
 
 The API uses the following Pydantic models for request and response validation:

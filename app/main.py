@@ -223,36 +223,63 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Add this new route to proxy requests to the webapp service
 @app.get("/{path:path}")
+@app.post("/{path:path}")
 async def proxy_webapp(path: str, request: Request):
     """Proxy requests to the webapp service"""
+    # Log the incoming request for debugging
+    logging.info(f"Proxying request: {request.method} {path}")
+    
     target_url = f"{WEBAPP_SERVICE_URL}/{path}"
     
     # Get query parameters from the original request
     params = dict(request.query_params)
     
-    # Create httpx client for forwarding the request
-    async with httpx.AsyncClient() as client:
-        try:
-            # Forward the request with the original query parameters
-            response = await client.request(
-                method=request.method,
-                url=target_url,
-                params=params,
-                headers={key: value for key, value in request.headers.items() if key != "host"},
-                content=await request.body(),
-                follow_redirects=True
-            )
-            
-            # Return the response from the webapp service
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type=response.headers.get("content-type")
-            )
-        except Exception as e:
-            logging.error(f"Error proxying request to webapp: {e}")
-            return JSONResponse(
-                status_code=500,
-                content={"status": "error", "message": str(e)}
-            ) 
+    # Don't proxy API requests, as they're handled by our API routes
+    # Make sure '/chat/' URLs are proxied - these are part of the WebApp
+    if path.startswith('api/'):
+        # This is an API request, let FastAPI handle it
+        logging.info(f"API request detected: {path}")
+        # The request will be handled by the appropriate router
+        # or return 404 if the endpoint doesn't exist
+        pass  # Let FastAPI continue processing this request
+    elif path == 'support-request' or path == 'webapp-log':
+        # For support-request POST, it should be handled by our api_router
+        # For GET to support-request, return 404
+        logging.info(f"Not proxying special route: {path}")
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": "Not found"}
+        )
+    else:
+        # For non-API paths, proxy to the webapp service
+        async with httpx.AsyncClient() as client:
+            try:
+                # Log the target URL
+                logging.info(f"Forwarding to: {target_url}")
+                
+                # Forward the request with the original query parameters
+                response = await client.request(
+                    method=request.method,
+                    url=target_url,
+                    params=params,
+                    headers={key: value for key, value in request.headers.items() if key != "host"},
+                    content=await request.body(),
+                    follow_redirects=True
+                )
+                
+                # Log the response status
+                logging.info(f"Received response: {response.status_code}")
+                
+                # Return the response from the webapp service
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get("content-type")
+                )
+            except Exception as e:
+                logging.error(f"Error proxying request to webapp: {e}")
+                return JSONResponse(
+                    status_code=500,
+                    content={"status": "error", "message": str(e)}
+                ) 

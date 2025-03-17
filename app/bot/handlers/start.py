@@ -13,6 +13,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Welcome! Use /request in the group to get support.")
 
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test command to verify the bot is working."""
+    await update.message.reply_text("✅ Bot is working correctly! Command handling is now fixed.")
+    logging.info(f"Test command executed by user {update.message.from_user.id}")
+
 async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /request command from the public group by opening a Web App."""
     user_id = update.message.from_user.id
@@ -52,7 +57,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👤 *User Commands*:\n"
         "/start - Start the bot\n"
         "/help - Show this help message\n"
-        "/request - Create a new support request\n\n"
+        "/request - Create a new support request\n"
+        "/test - Test command to verify the bot is working\n\n"
         "👨‍💼 *Admin Commands*:\n"
         "/list - List all support requests\n"
         "/view_ID - View details of a specific request (replace ID with request number)\n\n"

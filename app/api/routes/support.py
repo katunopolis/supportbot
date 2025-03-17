@@ -9,6 +9,9 @@ from app.database.models import Request, Message
 from pydantic import BaseModel
 from app.bot.handlers.support import notify_admin_group
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 class RequestCreate(BaseModel):
@@ -78,16 +81,12 @@ async def create_request(
             issue
         )
         
-        # Include a chat URL in the response
-        chat_url = f"/chat/{new_request.id}"
-        
-        return {
-            "request_id": new_request.id,
-            "status": "created",
-            "chat_url": chat_url
-        }
+        # Return a minimal response with just the request ID
+        # This helps avoid Telegram WebApp issues with complex responses
+        return {"request_id": new_request.id}
         
     except Exception as e:
+        logger.error(f"Error creating support request: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/webapp-log")

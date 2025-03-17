@@ -3,12 +3,13 @@ import asyncio
 from telegram import Bot, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from app.config import WEBHOOK_URL, MAX_CONNECTIONS, POOL_TIMEOUT, RATE_LIMIT, RATE_LIMIT_TIME
-from app.bot.handlers.start import start, help_command, request_support
+from app.bot.handlers.start import start, help_command, request_support, test_command
 from app.bot.handlers.admin import list_requests, view_request, handle_admin_callbacks, handle_resolution_message
 from app.database.session import get_db, SessionLocal
 from sqlalchemy import text
 import os
 from dotenv import load_dotenv
+from app.bot.handlers.support import notify_admin_group, collect_issue
 
 load_dotenv()
 
@@ -98,6 +99,12 @@ async def setup_handlers():
                 lambda u, c: rate_limited_handler(request_support, u, c)
             )
         )
+        bot_app.add_handler(
+            CommandHandler(
+                "test",
+                lambda u, c: rate_limited_handler(test_command, u, c)
+            )
+        )
         
         # Admin handlers
         bot_app.add_handler(
@@ -127,6 +134,13 @@ async def setup_handlers():
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
                 lambda u, c: rate_limited_handler(handle_message, u, c)
+            )
+        )
+        
+        # Add callback query handler for inline buttons
+        bot_app.add_handler(
+            CallbackQueryHandler(
+                lambda u, c: rate_limited_handler(handle_callback_query, u, c)
             )
         )
         
@@ -241,7 +255,7 @@ async def process_update(update_dict: dict):
         raise
 
 async def setup_bot_commands():
-    """Setup bot commands menu in Telegram."""
+    """Set up the bot commands menu."""
     global bot
     
     if bot is None:
@@ -260,9 +274,11 @@ async def setup_bot_commands():
                 
         commands = [
             BotCommand("start", "Start the bot"),
-            BotCommand("help", "Get help"),
-            BotCommand("request", "Request support"),
-            BotCommand("list", "List all support requests")
+            BotCommand("help", "Show help information"),
+            BotCommand("request", "Create a new support request"),
+            BotCommand("test", "Test if the bot is working correctly"),
+            BotCommand("list", "List all support requests (admin only)"),
+            BotCommand("view", "View a specific support request (admin only)")
         ]
         await bot.set_my_commands(commands)
         logging.info("Bot commands menu set up successfully")

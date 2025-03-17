@@ -2,6 +2,14 @@
 
 ## [Latest] - 2025-03-17
 
+### WebApp Chat Interface Improvements
+- Implemented Single-Page Application (SPA) approach to avoid redirect issues in Telegram WebApp
+- Fixed critical error: "Failed to load chat: 404" when accessing chat interface
+- Added missing API endpoint for retrieving messages since a specific timestamp
+- Fixed proxy route in main.py to properly handle API requests
+- Enhanced error handling with fallback mechanism for API failures
+- Improved chat interface styling and user experience
+
 ### Bot Initialization and WebApp Integration Fix
 - Fixed critical error: "This Application was not initialized via `Application.initialize`!" in command handling
 - Added proper initialization sequence for both Bot and Application objects (python-telegram-bot v20+ requirement)

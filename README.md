@@ -13,6 +13,25 @@ A support bot for Telegram that allows users to submit support requests and admi
 
 ## Setup
 
+### Quick Setup (Recommended)
+
+For a fully automated setup, run:
+
+```bash
+python setup.py
+```
+
+This script will:
+1. Check for required dependencies
+2. Configure environment variables
+3. Set up the database
+4. Build Docker containers
+5. Guide you through starting the application
+
+For detailed information about setting up the project on a new machine, see [docs/SETUP.md](docs/SETUP.md).
+
+### Manual Setup
+
 1. Clone this repository
 2. Copy `.env.example` to `.env` and fill in your values:
    ```
@@ -38,6 +57,18 @@ A support bot for Telegram that allows users to submit support requests and admi
 
 # View logs
 ./dev.ps1 logs
+```
+
+### Setting Up ngrok for Local Development
+
+For local development with Telegram WebApps, you need an HTTPS URL. Use ngrok:
+
+```bash
+# Start ngrok
+ngrok http 8000
+
+# Update configuration with new ngrok URL
+python run_test.py ngrok-update
 ```
 
 ### Database Migrations
@@ -79,6 +110,14 @@ If you encounter issues:
 3. Ensure the database connection is working
 4. Check the logs for error messages
 
+## Moving to a New Machine
+
+To set up the project on a new machine:
+
+1. Copy the entire project directory to the new machine
+2. Run `python setup.py` on the new machine
+3. For database migration, see the detailed instructions in [docs/SETUP.md](docs/SETUP.md)
+
 ## Testing
 
 The project includes a dedicated testing directory with utilities for local development and testing:
@@ -108,6 +147,7 @@ python run_test.py webapp     # Test WebApp URLs
 python run_test.py local      # Test locally in browser
 python run_test.py webhook-set    # Set up webhook
 python run_test.py webhook-delete # Delete webhook
+python run_test.py ngrok-update   # Update ngrok URL in configuration
 
 # Or running tests directly
 cd tests && python test_bot_connection.py

@@ -32,6 +32,9 @@ async def setup_webhook():
         logger.error("RAILWAY_PUBLIC_DOMAIN not found in environment variables")
         return False
     
+    # Log the domain we're using
+    logger.info(f"Using domain for webhook: {railway_domain}")
+    
     # Construct webhook URL
     webhook_url = f"https://{railway_domain}/webhook"
     

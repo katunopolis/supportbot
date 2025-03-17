@@ -75,6 +75,51 @@ This document provides solutions for common issues you might encounter when runn
      WEBAPP_PUBLIC_URL=https://your-webapp-public-url.com
      ```
 
+### Chat API 404 Error
+
+**Symptom**: After submitting a support request, you see "Error Loading Chat: Failed to load chat: 404" in the WebApp.
+
+**Possible Causes and Solutions**:
+
+1. **Missing API Endpoint**:
+   - The `/api/chat/{request_id}/messages` endpoint might be missing from your backend
+   - Add the endpoint to handle retrieving messages since a specific timestamp:
+     ```python
+     @router.get("/{request_id}/messages", response_model=List[MessageResponse])
+     async def get_messages_since(
+         request_id: int, 
+         since: Optional[str] = None,
+         db: Session = Depends(get_db)
+     ):
+         # Implementation details...
+     ```
+
+2. **Proxy Route Blocking API Requests**:
+   - The proxy route in `main.py` might be blocking legitimate API requests
+   - Update the condition to properly handle API routes:
+     ```python
+     if path.startswith('api/'):
+         # Let FastAPI's router handle this
+         pass  # Let FastAPI continue processing this request
+     elif path == 'support-request' or path == 'webapp-log':
+         # Block only specific routes
+         return JSONResponse(status_code=404, content={"status": "error", "message": "Not found"})
+     ```
+
+3. **Frontend Using Incorrect API URL**:
+   - The frontend might be using the wrong URL format for API requests
+   - Update the API endpoint URLs in the WebApp code:
+     ```javascript
+     // Correct endpoint for fetching chat data
+     const response = await fetch(`${API_BASE_URL}/api/chat/${requestId}`);
+     
+     // Correct endpoint for sending messages
+     const response = await fetch(`${API_BASE_URL}/api/chat/${requestId}/messages`, {
+         method: 'POST',
+         // Other request details...
+     });
+     ```
+
 ## Database Connection Issues
 
 **Symptom**: The bot starts but can't connect to the database.

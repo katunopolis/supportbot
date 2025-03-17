@@ -12,7 +12,7 @@ import subprocess
 
 def main():
     parser = argparse.ArgumentParser(description='Run Support Bot tests')
-    parser.add_argument('test_type', choices=['bot', 'webhook-set', 'webhook-delete', 'webapp', 'local', 'webapp-tunnel'],
+    parser.add_argument('test_type', choices=['bot', 'webhook-set', 'webhook-delete', 'webapp', 'local', 'webapp-tunnel', 'ngrok-update', 'container-webhook'],
                         help='Type of test to run')
     
     args = parser.parse_args()
@@ -33,6 +33,10 @@ def main():
         subprocess.run([sys.executable, 'test_local_webapp.py'])
     elif args.test_type == 'webapp-tunnel':
         subprocess.run([sys.executable, 'setup_webapp_tunnel.py'])
+    elif args.test_type == 'ngrok-update':
+        subprocess.run([sys.executable, 'ngrok_link_update.py'])
+    elif args.test_type == 'container-webhook':
+        subprocess.run([sys.executable, 'update_webhook_in_container.py'])
     
     return 0
 

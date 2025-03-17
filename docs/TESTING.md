@@ -20,6 +20,7 @@ The project includes several testing utilities located in the `tests/` directory
 - `test_webapp_url.py`: Tests the WebApp URL generation
 - `test_local_webapp.py`: Tests the local WebApp server
 - `setup_webapp_tunnel.py`: Sets up a separate ngrok tunnel for the WebApp
+- `ngrok_link_update.py`: Automates updating the ngrok URL when it changes
 
 ### Using Testing Utilities
 
@@ -43,6 +44,9 @@ python run_test.py local
 
 # Set up WebApp ngrok tunnel
 python run_test.py webapp-tunnel
+
+# Update the ngrok URL (when it changes)
+python run_test.py ngrok-update
 ```
 
 ### Setting Up Local Testing with ngrok
@@ -56,10 +60,16 @@ For local development with ngrok, you'll need to:
    ngrok http 8000
    ```
 4. Get the ngrok URL (e.g., `https://1234-56-78-90-12.ngrok-free.app`)
-5. Update your `.env` file with:
+5. Update your configuration with the new URL:
+   ```bash
+   python run_test.py ngrok-update
    ```
-   RAILWAY_PUBLIC_DOMAIN=1234-56-78-90-12.ngrok-free.app
-   ```
+   This will automatically:
+   - Update your `.env` file with the new URL
+   - Restart the supportbot container
+   - Set the webhook with the new URL
+   - Test the bot connection
+
 6. For the WebApp to work properly, you need to set up a separate tunnel for the webapp:
    ```bash
    python run_test.py webapp-tunnel
