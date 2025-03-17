@@ -4,6 +4,12 @@ A Telegram bot for managing support requests with a modern web interface and Pos
 
 ## Latest Updates (2025-03-17)
 
+- Fixed critical Application initialization error: "This Application was not initialized via `Application.initialize`!"
+- Added proper initialization sequence for both Bot and Application objects (python-telegram-bot v20+ requirement)
+- Improved error handling for bot initialization and webhook setup
+- Added container-to-container network communication for local development
+- Enhanced WebApp URL configuration with improved fallback mechanisms
+- Created a comprehensive [Troubleshooting Guide](./TROUBLESHOOTING.md) for common issues
 - Fixed critical bot initialization order error: "The parameter `bot` may only be set, if no connection_pool_size was set"
 - Updated Application builder chain order to set bot instance first
 - Enhanced documentation for proper initialization sequence
@@ -477,3 +483,16 @@ This configuration ensures:
 3. [ ] Add performance benchmarking guide
 4. [ ] Create troubleshooting guide
 5. [ ] Add security best practices 
+
+## Testing
+
+For comprehensive information on testing the Support Bot, please refer to:
+
+- [TESTING.md](TESTING.md) - Full documentation on testing procedures and utilities
+- [LOCAL-TESTING.md](../tests/LOCAL-TESTING.md) - Detailed instructions for local testing setups
+
+The project includes a dedicated test suite in the `tests/` directory with utilities for:
+- Bot connection testing 
+- Webhook management
+- WebApp URL testing
+- Local browser-based WebApp testing 

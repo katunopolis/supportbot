@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
+import logging
+import asyncio
 from app.database.session import get_db
 from app.database.models import Request, Message
 from pydantic import BaseModel
+from app.bot.handlers.support import notify_admin_group
 
 router = APIRouter()
 
 class RequestCreate(BaseModel):
     user_id: int
     issue: str
+    platform: Optional[str] = None
+    isWebApp: Optional[bool] = None
 
 class RequestUpdate(BaseModel):
     status: Optional[str] = None
@@ -22,40 +27,79 @@ class MessageCreate(BaseModel):
     sender_type: str
     message: str
 
+class WebAppLog(BaseModel):
+    level: str
+    message: str
+    context: Optional[Dict[str, Any]] = None
+
 @router.post("/support-request")
-async def create_request(request: RequestCreate, db: Session = Depends(get_db)):
-    """Creates a new support request."""
+async def create_request(
+    data: dict,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new support request from the web app.
+    """
     try:
+        user_id = data.get("user_id")
+        issue = data.get("issue")
+        
+        if not user_id or not issue:
+            raise HTTPException(status_code=400, detail="Missing required fields")
+            
+        # Create new request
         new_request = Request(
-            user_id=request.user_id,
-            issue=request.issue,
+            user_id=user_id,
+            issue=issue,
             status="pending",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(),
+            updated_at=datetime.now()
         )
         db.add(new_request)
         db.commit()
         db.refresh(new_request)
         
-        # Create initial message
+        # Add the first message from user
         message = Message(
             request_id=new_request.id,
-            sender_id=request.user_id,
+            sender_id=user_id,
             sender_type="user",
-            message=request.issue,
-            timestamp=datetime.utcnow()
+            message=issue
         )
         db.add(message)
         db.commit()
         
+        # Notify admin group in the background
+        background_tasks.add_task(
+            notify_admin_group,
+            new_request.id,
+            user_id,
+            issue
+        )
+        
+        # Include a chat URL in the response
+        chat_url = f"/chat/{new_request.id}"
+        
         return {
             "request_id": new_request.id,
-            "status": new_request.status,
-            "created_at": new_request.created_at.isoformat()
+            "status": "created",
+            "chat_url": chat_url
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/webapp-log")
+async def log_webapp_event(log_data: WebAppLog, background_tasks: BackgroundTasks):
+    """Logs events from the WebApp."""
+    try:
+        log_level = getattr(logging, log_data.level.upper(), logging.INFO)
+        logging.log(log_level, f"WebApp: {log_data.message} | Context: {log_data.context}")
+        return {"status": "ok"}
+    except Exception as e:
+        logging.error(f"Error logging webapp event: {e}")
+        return {"status": "error", "message": str(e)}
 
 @router.put("/requests/{request_id}")
 async def update_request(

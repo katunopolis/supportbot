@@ -1,11 +1,10 @@
 import logging
 import asyncio
-from telegram import Bot, Update
+from telegram import Bot, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from app.config import WEBHOOK_URL, MAX_CONNECTIONS, POOL_TIMEOUT
-from app.bot.handlers.start import start, request_support
-from app.bot.handlers.support import collect_issue
-from app.bot.handlers.admin import assign_request
+from app.config import WEBHOOK_URL, MAX_CONNECTIONS, POOL_TIMEOUT, RATE_LIMIT, RATE_LIMIT_TIME
+from app.bot.handlers.start import start, help_command, request_support
+from app.bot.handlers.admin import list_requests, view_request, handle_admin_callbacks, handle_resolution_message
 from app.database.session import get_db, SessionLocal
 from sqlalchemy import text
 import os
@@ -53,19 +52,21 @@ async def initialize_bot():
             raise RuntimeError("Database connection test failed")
 
         if bot is None or bot_app is None:
+            # Create bot instance
             bot = Bot(token=BOT_TOKEN)
-            # Create application builder and set request parameters first
-            builder = (
-                Application.builder()
-                .connection_pool_size(MAX_CONNECTIONS)
-                .pool_timeout(POOL_TIMEOUT)
-                .concurrent_updates(True)
-            )
-            # Then set the bot instance
-            bot_app = builder.bot(bot).build()
+            
+            # Initialize the bot object itself
+            await bot.initialize()
+            
+            # Create application with the token directly (don't set both bot and pool_size)
+            bot_app = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
+            
+            # Initialize the application - this was missing
+            await bot_app.initialize()
             
             logging.info("Bot initialized successfully")
             await setup_handlers()  # Setup handlers after initialization
+            await setup_bot_commands()  # Setup bot commands menu
             return True
         return True
     except Exception as e:
@@ -87,29 +88,45 @@ async def setup_handlers():
         )
         bot_app.add_handler(
             CommandHandler(
+                "help",
+                lambda u, c: rate_limited_handler(help_command, u, c)
+            )
+        )
+        bot_app.add_handler(
+            CommandHandler(
                 "request",
                 lambda u, c: rate_limited_handler(request_support, u, c)
             )
         )
         
-        # Message handler
+        # Admin handlers
         bot_app.add_handler(
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                lambda u, c: rate_limited_handler(
-                    lambda u, c: collect_issue(u, c, next(get_db())),
-                    u, c
-                )
+            CommandHandler(
+                "list",
+                lambda u, c: rate_limited_handler(list_requests, u, c)
             )
         )
         
-        # Callback query handler
+        # View request handler for /view_ID pattern
+        bot_app.add_handler(
+            MessageHandler(
+                filters.Regex(r'^/view_\d+$') & filters.ChatType.PRIVATE,
+                lambda u, c: rate_limited_handler(view_request, u, c)
+            )
+        )
+        
+        # Callback query handler for admin actions (assign/resolve)
         bot_app.add_handler(
             CallbackQueryHandler(
-                lambda u, c: rate_limited_handler(
-                    lambda u, c: assign_request(u, c, next(get_db())),
-                    u, c
-                )
+                lambda u, c: rate_limited_handler(handle_admin_callbacks, u, c)
+            )
+        )
+        
+        # Message handler for admin resolution messages and other text
+        bot_app.add_handler(
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
+                lambda u, c: rate_limited_handler(handle_message, u, c)
             )
         )
         
@@ -121,8 +138,19 @@ async def setup_handlers():
 
 async def setup_webhook():
     """Setup webhook with retry logic and proper error handling."""
+    global bot
+    
     if bot is None:
         raise RuntimeError("Bot not initialized")
+    
+    # Ensure the bot is initialized before setting up webhook
+    if not getattr(bot, '_initialized', False):
+        logging.warning("Bot not fully initialized, initializing before setting webhook")
+        try:
+            await bot.initialize()
+        except Exception as e:
+            logging.error(f"Error initializing bot during webhook setup: {e}")
+            raise
         
     max_retries = 3
     retry_delay = 2
@@ -158,24 +186,121 @@ async def setup_webhook():
 
 async def remove_webhook():
     """Remove webhook on shutdown with proper error handling."""
+    global bot
+    
     if bot is None:
         logging.warning("Bot not initialized, no webhook to remove")
         return
         
     try:
+        # Make sure the bot is initialized before calling delete_webhook
+        if not getattr(bot, '_initialized', False):
+            logging.warning("Bot not fully initialized, initializing before removing webhook")
+            try:
+                await bot.initialize()
+            except Exception as e:
+                logging.error(f"Error initializing bot during webhook removal: {e}")
+                return
+                
         await bot.delete_webhook()
         logging.info("Webhook removed successfully")
     except Exception as e:
         logging.error(f"Error removing webhook: {e}")
-        raise
 
-async def process_update(update: dict):
-    """Process incoming update from webhook with proper error handling."""
-    if bot_app is None:
-        raise RuntimeError("Bot application not initialized")
-        
+async def process_update(update_dict: dict):
+    """Process update from webhook."""
+    global bot, bot_app
+    
     try:
-        await bot_app.update_queue.put(Update.de_json(update, bot))
+        # Make sure the application is initialized
+        if bot_app is None or bot is None:
+            logging.warning("Bot or application not initialized, initializing now")
+            await initialize_bot()
+            if bot_app is None or bot is None:
+                logging.error("Failed to initialize bot or application")
+                return
+                
+        # Ensure both bot and application are initialized
+        if not getattr(bot, '_initialized', False):
+            logging.warning("Bot not fully initialized, initializing now")
+            try:
+                await bot.initialize()
+            except Exception as e:
+                logging.error(f"Error initializing bot during update processing: {e}")
+                return
+                
+        # Convert dict to Update object
+        update = Update.de_json(update_dict, bot)
+        logging.info(f"Processing update: {update.update_id}")
+        
+        # Process update through application
+        await bot_app.process_update(update)
+        logging.debug(f"Update {update.update_id} processed successfully")
     except Exception as e:
         logging.error(f"Error processing update: {e}")
-        raise 
+        raise
+
+async def setup_bot_commands():
+    """Setup bot commands menu in Telegram."""
+    global bot
+    
+    if bot is None:
+        logging.error("Bot not initialized, cannot set commands")
+        return
+        
+    try:
+        # Ensure the bot is initialized before setting commands
+        if not getattr(bot, '_initialized', False):
+            logging.warning("Bot not fully initialized, initializing before setting commands")
+            try:
+                await bot.initialize()
+            except Exception as e:
+                logging.error(f"Error initializing bot during command setup: {e}")
+                return
+                
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("help", "Get help"),
+            BotCommand("request", "Request support"),
+            BotCommand("list", "List all support requests")
+        ]
+        await bot.set_my_commands(commands)
+        logging.info("Bot commands menu set up successfully")
+    except Exception as e:
+        logging.error(f"Error setting up bot commands: {e}")
+
+async def handle_message(update: Update, context):
+    """Handle text messages - resolution messages from admins and issue collection"""
+    # First try to handle as admin resolution message
+    try:
+        if await handle_resolution_message(update, context):
+            return
+    except Exception as e:
+        logging.error(f"Error handling resolution message: {e}")
+    
+    # Import collect_issue here to avoid circular imports
+    from app.bot.handlers.support import collect_issue
+    
+    # If not a resolution message, try to collect issue
+    try:
+        await collect_issue(update, context)
+    except Exception as e:
+        logging.error(f"Error collecting issue: {e}")
+        await update.message.reply_text(
+            "I'm a support bot. Type /help to see available commands."
+        )
+
+async def shutdown():
+    """Properly shut down the application when the server stops."""
+    global bot, bot_app
+    
+    try:
+        if bot_app:
+            await bot_app.shutdown()
+            logging.info("Bot application shutdown successful")
+            
+        if bot:
+            await bot.shutdown()
+            logging.info("Bot shutdown successful")
+    except Exception as e:
+        logging.error(f"Error during bot shutdown: {e}") 

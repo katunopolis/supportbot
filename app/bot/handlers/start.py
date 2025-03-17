@@ -42,4 +42,22 @@ async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Click the button below to open our support form:",
             reply_markup=reply_markup
-        ) 
+        )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send help information about the bot."""
+    help_text = (
+        "🤖 *Support Bot Help* 🤖\n\n"
+        "I'm a bot that helps you manage support requests. Here are the available commands:\n\n"
+        "👤 *User Commands*:\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n"
+        "/request - Create a new support request\n\n"
+        "👨‍💼 *Admin Commands*:\n"
+        "/list - List all support requests\n"
+        "/view_ID - View details of a specific request (replace ID with request number)\n\n"
+        "📱 *WebApp Features*:\n"
+        "- Request form to submit support issues\n"
+        "- Chat interface for admins to communicate with users\n"
+    )
+    await update.message.reply_text(help_text, parse_mode="Markdown") 

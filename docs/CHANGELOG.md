@@ -2,6 +2,13 @@
 
 ## [Latest] - 2025-03-17
 
+### Bot Initialization and WebApp Integration Fix
+- Fixed critical error: "This Application was not initialized via `Application.initialize`!" in command handling
+- Added proper initialization sequence for both Bot and Application objects (python-telegram-bot v20+ requirement)
+- Improved error handling for bot initialization and webhook setup
+- Added container-to-container network communication for local development
+- Enhanced WebApp URL configuration with improved fallback mechanisms
+
 ### Bot Initialization Order Fix
 - Fixed critical error: "The parameter `bot` may only be set, if no connection_pool_size was set"
 - Updated Application builder chain order to set bot instance first
@@ -422,3 +429,25 @@ bot_app = (
 - Added deployment configuration details
 - Enhanced API documentation
 - Improved installation guide
+
+## [1.4.0] - 2025-03-17
+
+### Added
+- Admin chat interface via Telegram WebApp
+- WebApp-based real-time chat between admins and users
+- Chat API endpoints for message history and sending messages
+- Support for Telegram theme integration in WebApp
+- Configuration settings for WebApp URLs
+- Comprehensive documentation for the chat interface
+
+### Fixed
+- Resolved circular dependencies between modules
+- Fixed issue with admin notification for new support requests
+- Improved error handling in WebApp interface
+- Enhanced logging for debugging WebApp issues
+
+### Changed
+- Refactored bot initialization to avoid circular imports
+- Improved API response structure for chat endpoints
+- Enhanced admin view with WebApp button for chat interface
+- Updated documentation with WebApp configuration information

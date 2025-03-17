@@ -118,4 +118,23 @@ support-bot/
 2. Keep cross-references current
 3. Document major decisions
 4. Track changes in changelog
-5. Regular documentation review 
+5. Regular documentation review
+
+## Documentation
+
+- [README](README.md) - Overview and getting started
+- [API](API.md) - API endpoints documentation
+- [DATABASE](DATABASE.md) - Database schema and models
+- [DOCKER](DOCKER.md) - Docker setup and configuration
+- [LOCAL-DEVELOPMENT](LOCAL-DEVELOPMENT.md) - Local development guide
+- [MONITORING](MONITORING.md) - Monitoring and logging
+- [CONVERSATION_HISTORY](CONVERSATION_HISTORY.md) - Conversation flow history
+- [CHANGELOG](CHANGELOG.md) - Version history and changes
+
+### WebApp and Chat Functionality
+
+- [ADMIN-CHAT-INTERFACE](ADMIN-CHAT-INTERFACE.md) - Admin chat interface implementation
+- [CHAT-API](CHAT-API.md) - Chat API endpoints documentation
+- [WEBAPP-CHAT-INTERFACE](WEBAPP-CHAT-INTERFACE.md) - WebApp chat interface implementation
+- [CONFIG-SETTINGS](CONFIG-SETTINGS.md) - WebApp configuration settings
+- [CIRCULAR-DEPENDENCY-FIX](CIRCULAR-DEPENDENCY-FIX.md) - Resolving circular dependencies 

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -10,11 +10,15 @@ import logging
 import time
 from datetime import datetime
 from sqlalchemy import text
-from app.api.routes import chat, support, logs
+from app.api.routes import router as api_router
 from app.database.session import init_db, engine, POOL_SIZE, MAX_OVERFLOW
 from app.logging.setup import setup_logging
-from app.bot.bot import initialize_bot, setup_webhook, remove_webhook, process_update, bot_app, bot
-from app.monitoring import monitoring_router
+from app.bot.bot import initialize_bot, setup_webhook, remove_webhook, process_update
+import os
+import httpx
+
+# WebApp service URL from environment (with fallback to localhost)
+WEBAPP_SERVICE_URL = os.getenv("WEBAPP_SERVICE_URL", "http://localhost:3000")
 
 # Global metrics
 request_times = []
@@ -102,11 +106,7 @@ templates_path = Path(__file__).parent / "monitoring" / "templates"
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 # Include routers with response caching
-app.include_router(chat.router, prefix="/api", tags=["chat"])
-app.include_router(support.router, tags=["support"])  # Remove /api prefix for support routes
-app.include_router(logs.router, prefix="/api", tags=["logs"])
-# Mount monitoring routes without prefix since they already include /monitoring
-app.include_router(monitoring_router, tags=["monitoring"])
+app.include_router(api_router)
 
 async def process_update_background(update: dict, background_tasks: BackgroundTasks):
     """Process Telegram update in the background."""
@@ -161,7 +161,8 @@ async def health_check():
                 "note": "System metrics unavailable - psutil not installed"
             }
             
-        # Check bot connection
+        # Get bot status dynamically to avoid circular import
+        from app.bot.bot import bot_app
         bot_status = "running" if bot_app else "not_initialized"
         
         return {
@@ -220,11 +221,38 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"error": str(exc)}
     )
 
-# Initialize bot
-@app.on_event("startup")
-async def startup_event():
-    await bot.initialize()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await bot.shutdown() 
+# Add this new route to proxy requests to the webapp service
+@app.get("/{path:path}")
+async def proxy_webapp(path: str, request: Request):
+    """Proxy requests to the webapp service"""
+    target_url = f"{WEBAPP_SERVICE_URL}/{path}"
+    
+    # Get query parameters from the original request
+    params = dict(request.query_params)
+    
+    # Create httpx client for forwarding the request
+    async with httpx.AsyncClient() as client:
+        try:
+            # Forward the request with the original query parameters
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                params=params,
+                headers={key: value for key, value in request.headers.items() if key != "host"},
+                content=await request.body(),
+                follow_redirects=True
+            )
+            
+            # Return the response from the webapp service
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get("content-type")
+            )
+        except Exception as e:
+            logging.error(f"Error proxying request to webapp: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"status": "error", "message": str(e)}
+            ) 
