@@ -44,36 +44,30 @@ async def check_database():
         return False
 
 async def initialize_bot():
-    """Initialize bot application with optimized settings and proper error handling."""
+    """Initialize the bot with proper connection pool settings."""
     global bot, bot_app
-    
+
     try:
-        # Only initialize if not already initialized
+        # Test database connection before initializing bot
+        if not await check_database():
+            raise RuntimeError("Database connection test failed")
+
         if bot is None or bot_app is None:
-            # Test database connection first
-            if not await check_database():
-                raise RuntimeError("Database connection test failed")
-                
-            # Initialize bot with connection pool settings
-            bot = Bot(token=BOT_TOKEN)
+            bot = Bot(token=BOT_TOKEN)  # Use the validated BOT_TOKEN
             bot_app = (
                 Application.builder()
-                .bot(bot)                        # Must be set first
-                .concurrent_updates(True)
-                .pool_timeout(POOL_TIMEOUT)      # Pool settings after bot
+                .pool_timeout(POOL_TIMEOUT)      # Pool settings must be first
                 .connection_pool_size(MAX_CONNECTIONS)
+                .concurrent_updates(True)
+                .bot(bot)                        # Bot instance must be last
                 .build()
             )
-            
-            # Setup command and message handlers
-            await setup_handlers()
             logging.info("Bot initialized successfully")
-        else:
-            logging.info("Bot already initialized")
-            
+            return True
+        return True
     except Exception as e:
         logging.error(f"Error initializing bot: {e}")
-        raise
+        raise RuntimeError(f"Error during startup: {e}")
 
 async def setup_handlers():
     """Setup bot handlers with rate limiting and proper error handling."""
