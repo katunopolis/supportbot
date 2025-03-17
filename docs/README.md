@@ -2,9 +2,12 @@
 
 A Telegram bot for managing support requests with a modern web interface and PostgreSQL backend.
 
-## Latest Updates (2024-03-16)
+## Latest Updates (2025-03-17)
 
-- Fixed critical connection pool configuration issues
+- Fixed critical bot initialization order error: "The parameter `bot` may only be set, if no connection_pool_size was set"
+- Updated Application builder chain order to set bot instance first
+- Enhanced documentation for proper initialization sequence
+- Added comprehensive session logs for debugging
 - Optimized bot initialization sequence
 - Enhanced error handling and recovery mechanisms
 - Improved deployment configuration for Railway
@@ -12,7 +15,7 @@ A Telegram bot for managing support requests with a modern web interface and Pos
 ## Technical Details
 
 ### Bot Initialization
-The bot uses a specific initialization sequence to ensure proper connection pool management:
+The bot uses a specific initialization sequence that MUST follow this order:
 
 ```python
 bot_app = (
@@ -24,6 +27,8 @@ bot_app = (
     .build()
 )
 ```
+
+> **Important**: The bot instance MUST be set before any connection pool configuration.
 
 ### Connection Pool Configuration
 ```python
@@ -458,12 +463,12 @@ This configuration ensures:
 
 | File | Purpose | Last Updated |
 |------|----------|--------------|
-| [README.md](../README.md) | Project overview | 2024-03-22 |
-| [API.md](API.md) | API reference | 2024-03-22 |
-| [DATABASE.md](DATABASE.md) | Database guide | 2024-03-22 |
-| [MONITORING.md](MONITORING.md) | Monitoring guide | 2024-03-22 |
-| [CHANGELOG.md](../CHANGELOG.md) | Version history | 2024-03-22 |
-| [CONVERSATION_HISTORY.md](CONVERSATION_HISTORY.md) | Development logs | 2024-03-22 |
+| [README.md](../README.md) | Project overview | 2025-03-17 |
+| [API.md](API.md) | API reference | 2025-03-17 |
+| [DATABASE.md](DATABASE.md) | Database guide | 2025-03-17 |
+| [MONITORING.md](MONITORING.md) | Monitoring guide | 2025-03-17 |
+| [CHANGELOG.md](../CHANGELOG.md) | Version history | 2025-03-17 |
+| [CONVERSATION_HISTORY.md](CONVERSATION_HISTORY.md) | Development logs | 2025-03-17 |
 
 ## Documentation TODOs
 

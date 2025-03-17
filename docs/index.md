@@ -1,20 +1,18 @@
 # Support Bot Documentation
 
-## Latest Updates (2024-03-16)
+## Latest Updates
 
-### Bot Initialization Improvements
+### Bot Initialization Order Fix (2025-03-17)
+- Fixed critical initialization sequence error: "The parameter `bot` may only be set, if no connection_pool_size was set"
+- Updated Application builder chain order to set bot instance first
+- Enhanced documentation for proper initialization sequence
+- Added comprehensive session logs for debugging
+
+### Bot Initialization Improvements (2025-03-16)
 - Fixed critical connection pool configuration issues
 - Optimized bot initialization sequence
 - Enhanced error handling and recovery mechanisms
 - Improved deployment configuration for Railway
-
-## Latest Updates
-
-### Bot Initialization Order Fix (2024-03-23)
-- Fixed critical initialization sequence error
-- Updated Application builder chain order
-- Enhanced documentation for initialization process
-- Added comprehensive session logs
 
 ## Documentation Structure
 
@@ -71,24 +69,19 @@ support-bot/
 
 | Document | Status | Last Updated | Description |
 |----------|---------|--------------|-------------|
-| README.md | ✅ Updated | 2024-03-16 | Project overview and setup |
-| TECHNICAL.md | ✅ Updated | 2024-03-16 | Technical architecture |
-| CHANGELOG.md | ✅ Updated | 2024-03-16 | Version history |
-| API.md | ✅ Updated | 2024-03-16 | API documentation |
-| DATABASE.md | ✅ Updated | 2024-03-16 | Database guide |
-| MONITORING.md | ✅ Updated | 2024-03-16 | Monitoring setup |
-| [README.md](../README.md) | ✅ Updated | 2024-03-23 | Project overview |
-| [API.md](API.md) | ✅ Updated | 2024-03-22 | API reference |
-| [DATABASE.md](DATABASE.md) | ✅ Updated | 2024-03-22 | Database guide |
-| [MONITORING.md](MONITORING.md) | ✅ Updated | 2024-03-22 | Monitoring guide |
-| [CHANGELOG.md](../CHANGELOG.md) | ✅ Updated | 2024-03-23 | Version history |
-| [CONVERSATION_HISTORY.md](CONVERSATION_HISTORY.md) | ✅ Updated | 2024-03-23 | Development logs |
+| README.md | ✅ Updated | 2025-03-17 | Project overview and setup |
+| TECHNICAL.md | ✅ Updated | 2025-03-17 | Technical architecture |
+| CHANGELOG.md | ✅ Updated | 2025-03-17 | Version history |
+| API.md | ✅ Updated | 2025-03-17 | API documentation |
+| DATABASE.md | ✅ Updated | 2025-03-17 | Database guide |
+| MONITORING.md | ✅ Updated | 2025-03-17 | Monitoring guide |
+| CONVERSATION_HISTORY.md | ✅ Updated | 2025-03-17 | Development logs |
 
 ## Key Features
 
 ### Bot Initialization
 - Optimized connection pool configuration
-- Proper initialization sequence
+- **Proper initialization sequence (bot instance MUST be set first)**
 - Enhanced error handling
 - Automatic recovery mechanisms
 
@@ -109,7 +102,7 @@ support-bot/
 - [Installation Guide](INSTALLATION.md#quick-start)
 - [Environment Setup](DEPLOYMENT.md#environment-variables)
 - [API Documentation](API.md)
-- [Latest Changes](CHANGELOG.md#2024-03-16)
+- [Latest Changes](CHANGELOG.md#2025-03-17)
 - [Deployment Guide](DEPLOYMENT.md)
 
 ## Documentation Standards

@@ -1,8 +1,65 @@
 # Changelog
 
-## [2024-03-16] - Railway Deployment and Environment Setup
+## [Latest] - 2025-03-17
+
+### Bot Initialization Order Fix
+- Fixed critical error: "The parameter `bot` may only be set, if no connection_pool_size was set"
+- Updated Application builder chain order to set bot instance first
+- Enhanced documentation for proper initialization sequence
+- Added comprehensive session logs for debugging
 
 ### Added
+- Virtual environment setup with Python 3.11
+- Database initialization and setup
+- Webhook configuration for Railway deployment
+- Bot startup and initialization logging
+- SSL context configuration for secure connections
+- Health check endpoint implementation
+- Comprehensive logging system integration
+
+### Fixed
+- Python version compatibility issues resolved
+- Webhook setup and verification process
+- Database connection handling
+- SSL certificate verification
+- Bot initialization sequence
+
+### Changed
+- Updated Python runtime to 3.11
+- Enhanced logging format and structure
+- Improved webhook handling system
+- Optimized database operations
+- Enhanced error handling and recovery
+
+### Technical Details
+- Location of changes:
+  - Virtual environment setup in `venv/`
+  - Database initialization in `support_requests.db`
+  - Logging configuration in `bot.log`
+  - Bot initialization in `supportbot.py`
+
+- Key components modified:
+  - Python environment configuration
+  - Database schema and initialization
+  - Logging system setup
+  - Webhook configuration
+  - SSL context handling
+  - Error recovery system
+
+## [1.3.0] - 2025-03-16
+
+### Infrastructure Updates
+- Fixed critical connection pool configuration issues
+- Optimized bot initialization sequence
+- Enhanced error handling and recovery mechanisms
+- Improved deployment configuration for Railway
+
+### Database Migration Updates
+- Updated connection pool settings
+- Added health check implementations
+- Enhanced error recovery mechanisms
+
+### Railway Deployment and Environment Setup
 - Python 3.11 virtual environment setup and configuration
 - Railway deployment configuration and documentation
 - Health check endpoint for monitoring
@@ -12,34 +69,49 @@
 - Database initialization and management improvements
 - Webhook configuration for Railway deployment
 
+### WebApp Improvements
+- Extensive button state logging in WebApp
+- Theme handling and automatic updates
+- Viewport change handling
+- Back button support with logging
+- Closing confirmation for WebApp
+- Comprehensive code documentation and comments
+- Centralized logging functions for better maintainability
+- CSS variables for Telegram theme colors
+- Platform-specific UI adjustments
+
 ### Fixed
-- Python version compatibility issues
-- Webhook setup and verification process
-- Database connection handling
-- SSL certificate verification
-- Bot initialization sequence
-- Dependency conflicts and version mismatches
-- Log file permissions and rotation issues
+- Button type invalid error handling
+- WebApp initialization issues
+- Theme color application
+- Message sending state management
+- Duplicate logging code
+- Inconsistent button state management
+- Documentation gaps in code
+- Missing context in logging calls
 
 ### Changed
-- Updated Python runtime to 3.11
-- Enhanced logging format and structure
-- Improved webhook handling and verification
-- Optimized database operations
-- Updated documentation for Railway deployment
-- Restructured project layout for better organization
-- Enhanced error handling and recovery mechanisms
+- Improved error handling and recovery
+- Enhanced logging system with context
+- Better user feedback during operations
+- Platform-specific adjustments for mobile/desktop
+- Refactored logging functions for better code organization
+- Improved CSS structure with proper comments
+- Enhanced button state management
+- Streamlined WebApp initialization process
+- Updated documentation structure
 
-### Deployment Success (2024-03-16)
+### Deployment Success (2025-03-16)
 - Successful deployment to Railway platform
 - Confirmed working Alembic migrations with PostgreSQL
 - Verified Python 3.12 compatibility
 - All dependencies installed and working correctly
 - Health check endpoint operational
 
-## [Latest] - 2024-03-16
+## [Latest] - 2024-03-19
 
 ### Added
+- Extensive button state logging in WebApp
 - Virtual environment setup with Python 3.11
 - Database initialization and setup
 - Webhook configuration for Railway deployment
@@ -295,29 +367,18 @@
 - Implemented proper logging system
 - Added WebApp support with responsive design 
 
-## Version 1.3.0 (2024-03-16)
+## [1.3.0] - 2025-03-16
 
-### Major Changes
-- Complete codebase restructuring into a modular architecture
-- Separated code into logical modules under the `app` directory
-- Created dedicated directories for API routes, bot handlers, database, and logging
-- Improved code organization and maintainability
-- Updated `railway.toml` configuration to use new entry point `run.py`
+### Infrastructure Updates
+- Fixed critical connection pool configuration issues
+- Optimized bot initialization sequence
+- Enhanced error handling and recovery mechanisms
+- Improved deployment configuration for Railway
 
-### Added
-- New modular directory structure:
-  ```
-
-### Infrastructure Updates (2024-03-16)
-- Updated `railway.toml` configuration to use `run.py` as entry point
-- Aligned deployment configuration with new modular structure
-- Enhanced service initialization process
-
-### Database Migration Updates (2024-03-16)
-- Updated Alembic configuration to work with new modular structure
-- Fixed database migration paths in `env.py`
-- Added PYTHONPATH configuration to ensure proper module resolution
-- Enhanced build environment settings for Railway deployment
+### Database Migration Updates
+- Updated connection pool settings
+- Added health check implementations
+- Enhanced error recovery mechanisms
 
 ## [2024-03-16] - Bot Initialization Order Fix
 
