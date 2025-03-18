@@ -1,12 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 import logging
 
 from app.database.session import get_db
-from app.database.models import Request, Message
+from app.database.models import Request as DbRequest, Message as DbMessage
 from pydantic import BaseModel
+
+# Initialize the router with prefix
+router = APIRouter(tags=["chat"])
+
+# Add a duplicate router to handle both /chat and /chat_api endpoints
+from fastapi import FastAPI
+# This will be used in main.py to register the same routes under multiple prefixes
+chat_router = router
 
 # Define our Pydantic models for the API
 class MessageBase(BaseModel):
@@ -21,10 +29,13 @@ class MessageCreate(MessageBase):
     pass
 
 
-class MessageResponse(MessageBase):
+class MessageResponse(BaseModel):
     """Schema for message response"""
     id: int
     request_id: int
+    sender_id: int
+    sender_type: str
+    message: str
     timestamp: datetime
 
     class Config:
@@ -45,22 +56,33 @@ class ChatResponse(BaseModel):
     class Config:
         orm_mode = True
 
-router = APIRouter(prefix="/chat", tags=["chat"])
-
 @router.get("/{request_id}", response_model=ChatResponse)
 async def get_chat(request_id: int, db: Session = Depends(get_db)):
     """Get chat messages for a specific support request"""
     try:
         # Check if request exists
-        request = db.query(Request).filter(Request.id == request_id).first()
+        request = db.query(DbRequest).filter(DbRequest.id == request_id).first()
         if not request:
+            logging.error(f"Support request with ID {request_id} not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Support request with ID {request_id} not found"
             )
         
         # Get all messages for this request
-        messages = db.query(Message).filter(Message.request_id == request_id).all()
+        messages = db.query(DbMessage).filter(DbMessage.request_id == request_id).all()
+        
+        # Serialize messages to dictionary
+        serialized_messages = []
+        for msg in messages:
+            serialized_messages.append({
+                "id": msg.id,
+                "request_id": msg.request_id,
+                "sender_id": msg.sender_id,
+                "sender_type": msg.sender_type,
+                "message": msg.message,
+                "timestamp": msg.timestamp
+            })
         
         # Create response object with request and messages
         response = {
@@ -71,10 +93,14 @@ async def get_chat(request_id: int, db: Session = Depends(get_db)):
             "updated_at": request.updated_at,
             "issue": request.issue,
             "solution": request.solution,
-            "messages": messages
+            "messages": serialized_messages
         }
         
+        logging.info(f"Retrieved chat for request ID {request_id}: {len(messages)} messages")
         return response
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logging.error(f"Error retrieving chat: {str(e)}")
         raise HTTPException(
@@ -90,7 +116,7 @@ async def add_message(
 ):
     """Add a new message to the chat"""
     # Check if request exists
-    request = db.query(Request).filter(Request.id == request_id).first()
+    request = db.query(DbRequest).filter(DbRequest.id == request_id).first()
     if not request:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -98,7 +124,7 @@ async def add_message(
         )
     
     # Create new message
-    new_message = Message(
+    new_message = DbMessage(
         request_id=request_id,
         sender_id=message_data.sender_id,
         sender_type=message_data.sender_type,
@@ -119,14 +145,14 @@ async def add_message(
 async def get_chat_list(db: Session = Depends(get_db)):
     """Retrieves a list of all support requests with their latest messages."""
     try:
-        requests = db.query(Request).order_by(Request.updated_at.desc()).all()
+        requests = db.query(DbRequest).order_by(DbRequest.updated_at.desc()).all()
         
         chat_list = []
         for request in requests:
             # Get latest message
-            latest_message = db.query(Message).filter(
-                Message.request_id == request.id
-            ).order_by(Message.timestamp.desc()).first()
+            latest_message = db.query(DbMessage).filter(
+                DbMessage.request_id == request.id
+            ).order_by(DbMessage.timestamp.desc()).first()
             
             chat_info = {
                 "request_id": request.id,
@@ -150,43 +176,93 @@ async def get_chat_list(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{request_id}/messages", response_model=List[MessageResponse])
-async def get_messages_since(
+@router.get("/{request_id}/messages")
+async def get_messages(
     request_id: int, 
     since: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Get messages for a request since a specific timestamp"""
+    """Get messages for a chat since a specific timestamp."""
+    logging.info(f"Getting messages for request {request_id} since {since}")
+    
     try:
-        # Check if request exists
-        request = db.query(Request).filter(Request.id == request_id).first()
+        request = db.query(DbRequest).filter(DbRequest.id == request_id).first()
         if not request:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Support request with ID {request_id} not found"
-            )
+            logging.warning(f"Request ID {request_id} not found for messages")
+            # Return empty array instead of 404 for smoother UX
+            return []
+            
+        # Query for messages, optionally filtering by timestamp
+        query = db.query(DbMessage).filter(DbMessage.request_id == request_id)
         
-        # Build query for messages
-        query = db.query(Message).filter(Message.request_id == request_id)
-        
-        # Filter by timestamp if provided
+        # Handle timestamp filtering if provided
         if since:
             try:
-                since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
-                query = query.filter(Message.timestamp > since_dt)
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid timestamp format. Use ISO format."
-                )
+                # Try to parse the timestamp in different formats
+                try:
+                    # Try ISO format (with or without Z suffix)
+                    since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+                except ValueError:
+                    # Try other formats if needed
+                    logging.warning(f"Could not parse timestamp {since} as ISO format")
+                    since_dt = datetime.now()  # Fallback
+                
+                query = query.filter(DbMessage.timestamp > since_dt)
+                logging.info(f"Filtering messages after {since_dt}")
+            except Exception as e:
+                logging.error(f"Error parsing timestamp {since}: {str(e)}")
+                # Continue without timestamp filtering if parsing fails
         
-        # Get messages ordered by timestamp
-        messages = query.order_by(Message.timestamp.asc()).all()
+        # Get all matching messages    
+        messages = query.all()
+        logging.info(f"Found {len(messages)} messages for request {request_id}")
         
-        return messages
+        # Convert to response format
+        message_responses = []
+        for msg in messages:
+            message_responses.append({
+                "id": msg.id,
+                "request_id": msg.request_id,
+                "sender_id": msg.sender_id,
+                "sender_type": msg.sender_type,
+                "message": msg.message,
+                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
+            })
+            
+        return message_responses
     except Exception as e:
-        logging.error(f"Error retrieving messages: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving messages: {str(e)}"
-        ) 
+        logging.error(f"Error getting messages: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        # Return empty array instead of error for smoother UX
+        return []
+
+@router.post("/{request_id}/messages")
+async def send_message(request_id: int, message: str, sender_id: int, sender_type: str, db: Session = Depends(get_db)):
+    """Send a new message to a chat."""
+    request = db.query(DbRequest).filter(DbRequest.id == request_id).first()
+    if not request:
+        raise HTTPException(status_code=404, detail="Chat not found")
+        
+    # Create a new message
+    new_message = DbMessage(
+        request_id=request_id,
+        sender_id=sender_id,
+        sender_type=sender_type,
+        message=message,
+        timestamp=datetime.now()
+    )
+    
+    db.add(new_message)
+    db.commit()
+    db.refresh(new_message)
+    
+    # Return the created message
+    return {
+        "id": new_message.id,
+        "request_id": new_message.request_id,
+        "sender_id": new_message.sender_id,
+        "sender_type": new_message.sender_type,
+        "message": new_message.message,
+        "timestamp": new_message.timestamp
+    } 

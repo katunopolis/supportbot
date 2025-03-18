@@ -1,6 +1,42 @@
 # Support Bot Documentation
 
-Welcome to the Support Bot documentation. This directory contains comprehensive guides and documentation for setting up, using, and extending the Support Bot.
+This folder contains comprehensive documentation for the Support Bot project.
+
+## Code Structure
+
+- [CODE-MAP.md](CODE-MAP.md) - Comprehensive overview of codebase structure and interactions
+- [WEBAPP-CODE-MAP.md](WEBAPP-CODE-MAP.md) - Detailed documentation of the WebApp frontend components
+- [CIRCULAR-DEPENDENCY-FIX.md](CIRCULAR-DEPENDENCY-FIX.md) - How circular dependencies were resolved
+
+## Setup and Configuration
+
+- [SETUP.md](SETUP.md) - Setup and installation instructions
+- [CONFIG-SETTINGS.md](CONFIG-SETTINGS.md) - Configuration options and environment variables
+- [LOCAL-DEVELOPMENT.md](LOCAL-DEVELOPMENT.md) - Local development environment setup
+- [DOCKER.md](DOCKER.md) - Docker configuration and usage
+
+## API and Data Models
+
+- [API.md](API.md) - API documentation
+- [CHAT-API.md](CHAT-API.md) - Chat API specific documentation
+- [DATABASE.md](DATABASE.md) - Database schema and migrations
+
+## User Interfaces
+
+- [WEBAPP-CHAT-INTERFACE.md](WEBAPP-CHAT-INTERFACE.md) - WebApp chat interface documentation
+- [ADMIN-CHAT-INTERFACE.md](ADMIN-CHAT-INTERFACE.md) - Admin chat interface documentation
+
+## Testing and Monitoring
+
+- [TESTING.md](TESTING.md) - Testing instructions and test cases
+- [LOCAL-TESTING.md](LOCAL-TESTING.md) - Local testing procedures
+- [MONITORING.md](MONITORING.md) - Monitoring and observability
+
+## Troubleshooting and History
+
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues and solutions
+- [CHANGELOG.md](CHANGELOG.md) - History of changes
+- [CONVERSATION_HISTORY.md](CONVERSATION_HISTORY.md) - Development conversation history
 
 ## Documentation Index
 
@@ -19,6 +55,8 @@ Welcome to the Support Bot documentation. This directory contains comprehensive 
 
 - [API.md](API.md) - API documentation
 - [DATABASE.md](DATABASE.md) - Database schema and models
+- [CODE-MAP.md](CODE-MAP.md) - Overall codebase structure and interactions
+- [WEBAPP-CODE-MAP.md](WEBAPP-CODE-MAP.md) - WebApp frontend architecture and components
 
 ### Project Information
 

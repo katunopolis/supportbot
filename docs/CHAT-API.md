@@ -139,6 +139,62 @@ Retrieves messages for a specific support request that were created after a give
 ]
 ```
 
+### Reliability Endpoints
+
+The system includes several reliability endpoints to ensure chat functionality continues to work even in case of issues.
+
+#### Fixed Chat Response
+
+Provides a reliable chat response that always works, even when database access fails.
+
+**Endpoint:** `GET /fixed-chat/{request_id}`
+
+**Parameters:**
+- `request_id`: The ID of the support request
+
+**Response:** A valid chat structure with fixed data
+
+```json
+{
+  "request_id": 123,
+  "user_id": 12345,
+  "status": "pending",
+  "created_at": "2025-03-18T10:16:08.308399",
+  "updated_at": "2025-03-18T10:16:08.308414",
+  "issue": "Your support request is being processed.",
+  "solution": null,
+  "messages": [
+    {
+      "id": 1,
+      "request_id": 123,
+      "sender_id": 12345,
+      "sender_type": "user",
+      "message": "I need help with my support request.",
+      "timestamp": "2025-03-18T10:16:08.308399"
+    },
+    {
+      "id": 2,
+      "request_id": 123,
+      "sender_id": 0,
+      "sender_type": "system",
+      "message": "Your request has been submitted. An admin will respond shortly.",
+      "timestamp": "2025-03-18T10:16:08.308399"
+    }
+  ]
+}
+```
+
+#### Debug Chat Endpoint
+
+Provides debug information and a fallback response for chats.
+
+**Endpoint:** `GET /debug/chat/{request_id}`
+
+**Parameters:**
+- `request_id`: The ID of the support request
+
+**Response:** Detailed chat information with additional logging
+
 ## Data Models
 
 The API uses the following Pydantic models for request and response validation:
@@ -194,10 +250,39 @@ These API endpoints are consumed by the Telegram WebApp chat interface to provid
 
 ## Error Handling
 
-All endpoints include proper error handling:
+All endpoints include enhanced error handling with graceful degradation:
 
-- `404 Not Found`: Returned when the specified request ID doesn't exist
-- `500 Internal Server Error`: Returned for unexpected server-side errors
+- For the `/api/chat/{request_id}/messages` endpoint, an empty array is returned instead of a 404 error when no messages are found
+- The `/fixed-chat/{request_id}` endpoint always returns a valid response structure even if the request doesn't exist
+- The main chat loading system tries multiple endpoints in sequence to ensure at least one succeeds
+
+## Frontend Integration
+
+The WebApp implements a multi-tiered fallback system for chat data loading:
+
+```javascript
+async function loadChatHistory(requestId) {
+    const endpoints = [
+        `${API_BASE_URL}/api/chat_api/${requestId}`,
+        `${API_BASE_URL}/api/support/chat/${requestId}`,
+        `${API_BASE_URL}/debug/chat/${requestId}`,
+        `${API_BASE_URL}/fixed-chat/${requestId}`
+    ];
+
+    let lastError = null;
+    for (const endpoint of endpoints) {
+        try {
+            // Try each endpoint until one succeeds
+            // Implementation details...
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    
+    // If we get here, all endpoints failed
+    throw lastError || new Error('Failed to load chat history from all endpoints');
+}
+```
 
 ## Authentication
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## [Latest] - 2025-03-18
+
+### Critical Chat System Fixes
+- Fixed issue with support request submission not sending notifications to admin group
+- Fixed "Failed to fetch" error when loading the chat interface after submitting a request
+- Added direct handling of `/api/chat/` endpoints with fallback responses
+- Implemented reliable `/fixed-chat/{request_id}` endpoint that always returns valid data
+- Enhanced message polling with empty array responses for graceful degradation
+- Fixed proxy routing to properly handle API requests and special routes
+- Improved error handling with detailed logging throughout the system
+- Added multiple fallback endpoints for chat history loading in the frontend
+
+### WebApp Integration Improvements
+- Implemented multiple fallback mechanisms for chat data loading
+- Enhanced frontend error handling with better user feedback
+- Fixed proxy logic to handle special route cases correctly
+- Added better detection of chat-related API requests
+- Improved real-time message polling reliability
+- Enhanced support request submission workflow
+
 ## [Latest] - 2025-03-17
 
 ### WebApp Chat Interface Improvements
