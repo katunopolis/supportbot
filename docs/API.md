@@ -18,7 +18,7 @@ POST /api/requests
 **Request Body:**
 ```json
 {
-    "user_id": 123456789,
+    "user_id": 5334828778,
     "issue": "Description of the issue"
 }
 ```
@@ -41,7 +41,7 @@ PUT /api/requests/{request_id}
 ```json
 {
     "status": "in_progress",
-    "assigned_admin": 987654321,
+    "assigned_admin": 5334828778,
     "solution": "Solution description"
 }
 ```
@@ -51,7 +51,7 @@ PUT /api/requests/{request_id}
 {
     "request_id": 1,
     "status": "in_progress",
-    "assigned_admin": 987654321,
+    "assigned_admin": 5334828778,
     "solution": "Solution description",
     "updated_at": "2025-03-17T14:30:00.000Z"
 }
@@ -65,7 +65,7 @@ POST /api/requests/{request_id}/messages
 **Request Body:**
 ```json
 {
-    "sender_id": 123456789,
+    "sender_id": 5334828778,
     "sender_type": "user",
     "message": "Message content"
 }
@@ -135,14 +135,9 @@ GET /health
 ```json
 {
     "status": "healthy",
-    "timestamp": 1710604868.191,
+    "version": "1.0.0",
     "database": "connected",
-    "bot": "running",
-    "version": "1.2.0",
-    "system": {
-        "cpu_percent": 45.2,
-        "memory_percent": 68.7
-    }
+    "telegram_api": "connected"
 }
 ```
 
@@ -189,9 +184,152 @@ The API implements rate limiting to prevent abuse. Current limits are:
 
 ## Notes
 1. All timestamps are in ISO 8601 format and UTC timezone
+   - Format example: `2023-04-15T14:30:25.123Z` (the 'Z' suffix indicating UTC timezone)
+   - All timestamps returned by API endpoints are guaranteed to be in this format
+   - When sending timestamps to endpoints, they should be in ISO 8601 format
+   - The API will handle converting to/from UTC if needed
 2. Request IDs are integers and auto-incrementing
 3. Status values for support requests can be: "pending", "in_progress", "resolved", "closed"
 4. Sender types can be: "user", "admin", "system"
+
+## Timestamp Handling Guidelines
+
+### ISO 8601 Format Requirements
+
+All API endpoints that accept or return timestamps adhere to the following standards:
+
+1. **Format**: `YYYY-MM-DDTHH:mm:ss.sssZ` where:
+   - `YYYY-MM-DD`: Full date (year, month, day)
+   - `T`: Separator between date and time
+   - `HH:mm:ss.sss`: Time with optional milliseconds
+   - `Z`: UTC timezone indicator
+
+2. **Examples**:
+   - `2023-04-15T14:30:25Z` (Basic format)
+   - `2023-04-15T14:30:25.123Z` (With milliseconds)
+
+### Message Polling Best Practices
+
+When polling for new messages using the `/api/chat/{request_id}/messages` endpoint:
+
+1. **Always provide a `since` parameter** in ISO 8601 format
+   ```http
+   GET /api/chat/{request_id}/messages?since=2023-04-15T14:30:25.123Z
+   ```
+
+2. **Use the most recent message timestamp** for subsequent polls:
+   ```javascript
+   const lastMessageTimestamp = messages[messages.length - 1].timestamp;
+   ```
+
+3. **URL-encode the timestamp** when including it in query parameters
+
+4. **Validation**: The API will validate and normalize timestamps. If an invalid timestamp is provided, the current time will be used as a fallback.
+
+5. **Headers**: Include the timestamp in a header for debugging:
+   ```
+   X-Last-Timestamp: 2023-04-15T14:30:25.123Z
+   ```
+
+### Sending Messages with Timestamps
+
+When sending messages, you may include a client timestamp:
+
+```http
+POST /api/chat/{request_id}/messages
+Content-Type: application/json
+X-Client-Timestamp: 2023-04-15T14:30:25.123Z
+
+{
+    "sender_id": 123456789,
+    "sender_type": "user",
+    "message": "Message content",
+    "timestamp": "2023-04-15T14:30:25.123Z"
+}
+```
+
+The server will:
+1. Use the provided timestamp for reference
+2. Override with server time for consistency
+3. Return the server-generated timestamp in the response
+
+## Chat API Endpoints
+
+### Get Messages Since Timestamp
+```http
+GET /api/chat/{request_id}/messages?since={iso8601_timestamp}
+```
+
+**Query Parameters:**
+- `since` (required): ISO 8601 timestamp to get messages newer than this time
+
+**Response:**
+```json
+[
+    {
+        "id": 42,
+        "request_id": 123,
+        "sender_id": 5334828778,
+        "sender_type": "user",
+        "message": "Message content",
+        "timestamp": "2023-04-15T14:30:25.123Z"
+    }
+]
+```
+
+### Get Chat History
+```http
+GET /api/chat/{request_id}
+```
+
+**Response:**
+```json
+{
+    "request_id": 123,
+    "user_id": 5334828778,
+    "status": "in_progress",
+    "created_at": "2023-04-15T14:30:25.123Z",
+    "updated_at": "2023-04-15T14:35:10.456Z",
+    "issue": "Description of the issue",
+    "solution": "Solution if available",
+    "messages": [
+        {
+            "id": 42,
+            "request_id": 123,
+            "sender_id": 5334828778,
+            "sender_type": "user",
+            "message": "Message content",
+            "timestamp": "2023-04-15T14:30:25.123Z"
+        }
+    ]
+}
+```
+
+### Get Chat List
+```http
+GET /api/chat/chats
+```
+
+**Response:**
+```json
+[
+    {
+        "request_id": 123,
+        "status": "in_progress",
+        "issue": "Description of the issue",
+        "created_at": "2023-04-15T14:30:25.123Z",
+        "updated_at": "2023-04-15T14:35:10.456Z",
+        "assigned_admin": 9876543,
+        "solution": "Solution if available",
+        "latest_message": {
+            "sender_id": 5334828778,
+            "sender_type": "user",
+            "message": "Latest message content",
+            "timestamp": "2023-04-15T14:35:10.456Z"
+        }
+    }
+]
+```
 
 ## Monitoring API Endpoints
 
@@ -374,3 +512,13 @@ The monitoring dashboard is available at `/monitoring/dashboard` and provides:
    - Use HTTPS for all requests
    - Include appropriate authentication
    - Validate all input data 
+
+## Data Types
+- `request_id`: Integer
+- `user_id`: BigInteger (supports full range of Telegram user IDs)
+- `assigned_admin`: BigInteger (supports full range of Telegram admin IDs)
+- `sender_id`: BigInteger (supports full range of Telegram user IDs)
+- `status`: String
+- `message`: String
+- `solution`: String
+- All timestamps are in ISO 8601 format with UTC timezone 

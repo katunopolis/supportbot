@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.database.session import get_db
 from app.database.models import Log
 
@@ -32,7 +32,7 @@ async def get_logs(
         
         return [
             {
-                "timestamp": log.timestamp.isoformat(),
+                "timestamp": log.timestamp.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "level": log.level,
                 "message": log.message,
                 "context": log.context
@@ -62,7 +62,7 @@ async def get_recent_logs(
         
         return [
             {
-                "timestamp": log.timestamp.isoformat(),
+                "timestamp": log.timestamp.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "level": log.level,
                 "message": log.message,
                 "context": log.context

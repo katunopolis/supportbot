@@ -9,6 +9,7 @@ webapp-support-bot/
 ├── index.html              # Main entry point and support request form
 ├── chat.html               # Chat interface for support conversations
 ├── support-form.html       # Dedicated support request form
+├── admin-panel.html        # Admin panel for managing support requests
 ├── css/                    # Stylesheet directory
 │   ├── style.css           # Main styles for the WebApp
 │   └── chat-style.css      # Styles specific to the chat interface
@@ -59,40 +60,250 @@ The Support Request Form is the initial interface users interact with when they 
 
 ### 2. Chat Interface (`chat.html`)
 
-The Chat Interface provides the conversation view between users and support administrators. It:
+The Chat Interface provides the conversation view between users and support administrators. It includes robust error handling and fallback mechanisms:
 
-- Displays the message history
-- Polls for new messages in real-time
-- Allows sending new messages
-- Adapts to Telegram's theme
+#### Enhanced Chat Loading
+
+```javascript
+async function loadChatHistory(requestId) {
+    const endpoints = [
+        `${API_BASE_URL}/api/chat/${requestId}`,
+        `${API_BASE_URL}/api/support/chat/${requestId}`,
+        `${API_BASE_URL}/debug/chat/${requestId}`,
+        `${API_BASE_URL}/fixed-chat/${requestId}`
+    ];
+
+    let lastError = null;
+    for (const endpoint of endpoints) {
+        try {
+            const response = await fetch(endpoint);
+            if (response.ok) {
+                const data = await response.json();
+                return data;
+            }
+        } catch (error) {
+            lastError = error;
+            logWebAppEvent('error', `Failed to load chat from ${endpoint}`, {
+                requestId,
+                error: error.message
+            });
+        }
+    }
+    
+    throw lastError || new Error('Failed to load chat history from all endpoints');
+}
+```
+
+#### Enhanced Message Polling
+
+```javascript
+async function startPolling(requestId) {
+    if (isPolling) {
+        console.warn('Already polling, skipping startPolling');
+        return;
+    }
+    
+    stopPolling(); // Clean up any existing interval
+    
+    // Ensure we have a valid timestamp before starting polling
+    if (!lastMessageTimestamp) {
+        console.warn('No lastMessageTimestamp available, initializing with current time');
+        lastMessageTimestamp = new Date().toISOString();
+    } else {
+        lastMessageTimestamp = ensureISOTimestamp(lastMessageTimestamp);
+    }
+    
+    isPolling = true;
+    let retryCount = 0;
+    const maxRetryDelay = 5000;
+    const baseDelay = 1000;
+    
+    async function pollMessages() {
+        // Skip if we're initializing or if polling has been stopped
+        if (isInitializing || !isPolling) {
+            return;
+        }
+
+        try {
+            const timestamp = ensureISOTimestamp(lastMessageTimestamp);
+            
+            const response = await fetch(
+                `${API_BASE_URL}/api/chat/${requestId}/messages?since=${encodeURIComponent(timestamp)}`,
+                { 
+                    headers: { 
+                        'Cache-Control': 'no-cache',
+                        'X-Last-Timestamp': timestamp
+                    }
+                }
+            );
+            
+            if (response.ok) {
+                const messages = await response.json();
+                if (messages && messages.length > 0) {
+                    messages.forEach(msg => {
+                        const msgTimestamp = ensureISOTimestamp(msg.timestamp);
+                        if (msgTimestamp > lastMessageTimestamp) {
+                            msg.timestamp = msgTimestamp;
+                            addMessage(msg);
+                            lastMessageTimestamp = msgTimestamp;
+                        }
+                    });
+                    scrollToBottom();
+                    retryCount = 0;
+                }
+            } else {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+        } catch (error) {
+            console.error('Error polling messages:', error);
+            retryCount++;
+            
+            if (retryCount > 3) {
+                stopPolling();
+                await loadChatHistory(); // Reload chat history instead of just reinitializing
+                return;
+            }
+            
+            // Back off exponentially on errors
+            const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxRetryDelay);
+            clearInterval(pollingInterval);
+            if (isPolling) { // Only set new interval if still polling
+                pollingInterval = setInterval(pollMessages, delay);
+            }
+        }
+    }
+
+    pollingInterval = setInterval(pollMessages, baseDelay);
+    pollMessages(); // Initial poll
+}
+```
+
+#### Enhanced Error Handling
+
+```javascript
+function handleError(error, context) {
+    // Log the error with context
+    logWebAppEvent('error', error.message, {
+        context,
+        platform: tg.platform,
+        viewportHeight: tg.viewportHeight,
+        timestamp: new Date().toISOString()
+    });
+
+    // Show user-friendly error message
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = 'An error occurred. Please try again.';
+    errorDiv.style.display = 'block';
+
+    // Hide after 5 seconds
+    setTimeout(() => {
+        errorDiv.style.display = 'none';
+    }, 5000);
+}
+```
+
+#### WebApp Event Logging
+
+```javascript
+async function logWebAppEvent(level, message, context = {}) {
+    try {
+        await fetch(`${API_BASE_URL}/api/logs/webapp`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                level,
+                message,
+                context: {
+                    ...context,
+                    platform: tg.platform,
+                    colorScheme: tg.colorScheme,
+                    viewportHeight: tg.viewportHeight
+                }
+            })
+        });
+    } catch (error) {
+        console.error('Failed to log event:', error);
+    }
+}
+```
+
+### 3. Admin Panel Interface (`admin-panel.html`)
+
+The Admin Panel interface provides administrators with a comprehensive dashboard to manage all support requests:
 
 #### Key HTML Elements:
 
 ```html
-<div class="chat-container">
-    <div class="chat-header">
-        <h2 id="requestTitle">Support Request #${requestId}</h2>
-        <div id="requestStatus">Status: ${data.status}</div>
+<div class="container">
+    <div class="header">
+        <h1>Support Requests</h1>
     </div>
-    <div id="messagesContainer" class="messages-container">
-        <!-- Messages are dynamically inserted here -->
+    
+    <div id="requestList" class="request-list">
+        <!-- Requests will be populated here -->
     </div>
-    <div class="chat-input">
-        <textarea id="messageInput" placeholder="Type your message..."></textarea>
-        <button id="sendButton">Send</button>
+    
+    <div id="loading" class="loading" style="display: none;">
+        Loading requests...
+    </div>
+    
+    <div id="error" class="error" style="display: none;">
+        Error loading requests. Please try again.
     </div>
 </div>
 ```
 
 #### Key JavaScript Functions:
 
-- `loadChatHistory(requestId)`: Fetches chat data with fallback mechanisms
-- `sendChatMessage(requestId)`: Sends new messages to the API
-- `startPolling(requestId)`: Begins polling for new messages
-- `addMessage(text, isAdmin, timestamp, isMine)`: Adds messages to the UI
-- `scrollToBottom()`: Scrolls to the most recent messages
+- `loadOpenRequests()`: Fetches and displays all open support requests
+- `openChat(requestId)`: Opens the chat interface for a specific request
+- `solveRequest(requestId)`: Marks a request as solved
+- `setThemeColors()`: Adapts the interface to match Telegram's theme
 
-### 3. Telegram WebApp Integration
+#### API Interactions:
+
+```javascript
+async function loadOpenRequests() {
+    try {
+        const response = await fetch('/api/support/requests?status=open');
+        if (!response.ok) {
+            throw new Error('Failed to load requests');
+        }
+        
+        const requests = await response.json();
+        
+        if (requests.length === 0) {
+            requestList.innerHTML = '<div class="request-card">No open requests at the moment.</div>';
+        } else {
+            requests.forEach(request => {
+                const card = document.createElement('div');
+                card.className = 'request-card';
+                
+                card.innerHTML = `
+                    <div class="request-header">
+                        <span class="request-id">Request #${request.id}</span>
+                        <span class="request-status status-${request.status.toLowerCase()}">${request.status}</span>
+                    </div>
+                    <div class="request-issue">${request.issue}</div>
+                    <div class="request-actions">
+                        <button class="button button-primary" onclick="openChat(${request.id})">Open Chat</button>
+                        <button class="button button-secondary" onclick="solveRequest(${request.id})">Solve</button>
+                    </div>
+                `;
+                
+                requestList.appendChild(card);
+            });
+        }
+    } catch (err) {
+        error.textContent = err.message;
+        error.style.display = 'block';
+    }
+}
+```
+
+### 4. Telegram WebApp Integration
 
 Both interfaces integrate with the Telegram WebApp API to provide a seamless experience within Telegram:
 
@@ -168,15 +379,23 @@ function setThemeColors() {
                                       └────────────┘
 ```
 
-### 3. Message Polling Sequence
+### 3. Message Polling Sequence (Updated)
 
 ```
 ┌────────────┐     ┌────────────┐     ┌────────────┐
 │            │     │            │     │            │
-│  Start     │────▶│  setInterval │──▶│  API Call  │
-│  Polling   │     │  (3 sec)   │     │  GET       │
+│  Start     │────▶│ Initialize │────▶│ Validate   │
+│  Polling   │     │ Timestamp  │     │ ISO Format │
 │            │     │            │     │            │
 └────────────┘     └────────────┘     └────────────┘
+                                             │
+                                             ▼
+                                      ┌────────────┐
+                                      │            │
+                                      │  API Call  │
+                                      │  with ISO  │
+                                      │  Timestamp │
+                                      └────────────┘
                                              │
                                              ▼
                                       ┌────────────┐
@@ -187,12 +406,12 @@ function setThemeColors() {
                                       └────────────┘
                                              │
                                              ▼
-                                      ┌────────────┐
-                                      │            │
-                                      │  Update UI │
-                                      │  If Needed │
-                                      │            │
-                                      └────────────┘
+                                      ┌────────────┐     ┌────────────┐
+                                      │            │     │            │
+                                      │  Update UI │────▶│ Update ISO │
+                                      │  If Needed │     │ Timestamp  │
+                                      │            │     │            │
+                                      └────────────┘     └────────────┘
 ```
 
 ## Key API Interactions
@@ -283,110 +502,64 @@ async function submitRequest() {
 
 ```javascript
 async function loadChatHistory(requestId) {
-    try {
-        const endpoints = [
-            `${API_BASE_URL}/api/chat_api/${requestId}`,
-            `${API_BASE_URL}/api/support/chat/${requestId}`,
-            `${API_BASE_URL}/debug/chat/${requestId}`,
-            `${API_BASE_URL}/fixed-chat/${requestId}`
-        ];
+    const endpoints = [
+        `${API_BASE_URL}/api/chat/${requestId}`,
+        `${API_BASE_URL}/api/support/chat/${requestId}`,
+        `${API_BASE_URL}/debug/chat/${requestId}`,
+        `${API_BASE_URL}/fixed-chat/${requestId}`
+    ];
 
-        let lastError = null;
-        let data = null;
-        
-        for (const endpoint of endpoints) {
-            try {
-                console.log(`Attempting to fetch chat history from: ${endpoint}`);
-                const response = await fetch(endpoint);
-                
-                if (!response.ok) {
-                    console.warn(`Failed to load chat history from ${endpoint}: ${response.status} ${response.statusText}`);
-                    lastError = new Error(`HTTP error: ${response.status}`);
-                    continue;
-                }
-                
-                data = await response.json();
-                console.log(`Chat history loaded from ${endpoint}:`, data);
-                
-                if (!data) {
-                    console.warn(`Endpoint ${endpoint} returned null or empty data`);
-                    lastError = new Error('Null response');
-                    continue;
-                }
-                
-                // If we got data, break out of the loop
-                console.log(`Successfully loaded data from ${endpoint}`);
-                break;
-            } catch (error) {
-                console.error(`Error loading chat history from ${endpoint}:`, error);
-                lastError = error;
+    let lastError = null;
+    for (const endpoint of endpoints) {
+        try {
+            const response = await fetch(endpoint);
+            if (response.ok) {
+                const data = await response.json();
+                return data;
             }
+        } catch (error) {
+            lastError = error;
+            logWebAppEvent('error', `Failed to load chat from ${endpoint}`, {
+                requestId,
+                error: error.message
+            });
         }
-        
-        // If all attempts failed or returned null
-        if (!data) {
-            throw lastError || new Error('Failed to load chat history from all endpoints');
-        }
-        
-        // Process the data and update UI
-        // ...rest of implementation...
-    } catch (error) {
-        console.error('Error loading chat:', error);
-        showError(`Error Loading Chat\n${error.message}\n\nYour request has been submitted. Please try again later.`);
-        hideLoading();
     }
+    
+    throw lastError || new Error('Failed to load chat history from all endpoints');
 }
 ```
 
 ### 3. Message Polling Implementation
 
 ```javascript
-function startPolling(requestId) {
-    // Clear any existing polling
-    if (pollingInterval) {
-        clearInterval(pollingInterval);
-    }
+async function startPolling(requestId) {
+    let lastTimestamp = new Date().toISOString();
     
-    // Set last message timestamp
-    let lastMessageTimestamp = new Date();
-    
-    // Log start of polling
-    console.log(`Starting polling for request ${requestId} from timestamp ${lastMessageTimestamp.toISOString()}`);
-    
-    // Poll for new messages every 3 seconds
-    pollingInterval = setInterval(async () => {
+    setInterval(async () => {
         try {
-            const since = lastMessageTimestamp.toISOString();
             const response = await fetch(
-                `${API_BASE_URL}/api/chat/${requestId}/messages?since=${encodeURIComponent(since)}`
+                `${API_BASE_URL}/api/chat/${requestId}/messages?since=${lastTimestamp}`
             );
             
-            if (!response.ok) {
-                console.warn(`Failed to poll messages: ${response.status} ${response.statusText}`);
-                return;
-            }
-            
-            const newMessages = await response.json();
-            
-            if (newMessages && newMessages.length > 0) {
-                console.log(`Received ${newMessages.length} new messages`);
-                
-                // Update lastMessageTimestamp to the most recent message time
-                lastMessageTimestamp = new Date(newMessages[newMessages.length - 1].timestamp);
-                
-                // Add new messages to the UI
-                newMessages.forEach(msg => {
-                    const msgIsFromAdmin = msg.sender_type === 'admin';
-                    const isMine = isAdmin ? msgIsFromAdmin : !msgIsFromAdmin;
-                    addMessage(msg.message, msgIsFromAdmin, new Date(msg.timestamp), isMine);
+            if (response.ok) {
+                const messages = await response.json();
+                if (messages && messages.length > 0) {
+                    messages.forEach(msg => addMessage(msg));
+                    lastTimestamp = messages[messages.length - 1].timestamp;
+                }
+            } else {
+                // Handle empty response gracefully
+                logWebAppEvent('info', 'No new messages in polling', {
+                    requestId,
+                    timestamp: lastTimestamp
                 });
-                
-                // Scroll to bottom
-                scrollToBottom();
             }
         } catch (error) {
-            console.error('Error polling messages:', error);
-            // Polling continues even after errors
+            logWebAppEvent('error', 'Error polling messages', {
+                requestId,
+                error: error.message
+            });
         }
     }, 3000);
 }
@@ -454,22 +627,7 @@ The WebApp implements comprehensive error handling and logging:
 ```javascript
 async function logWebAppEvent(level, message, context = {}) {
     try {
-        // Add standard Telegram context
-        const fullContext = {
-            ...context,
-            platform: tg.platform || 'unknown',
-            version: tg.version || 'unknown',
-            viewportHeight: tg.viewportHeight,
-            viewportStableHeight: tg.viewportStableHeight,
-            isExpanded: tg.isExpanded,
-            backgroundColor: tg.backgroundColor
-        };
-        
-        // Log to console first (for immediate feedback)
-        console.log(`WebApp ${level}: ${message}`, fullContext);
-        
-        // Send to server logging endpoint
-        await fetch(`${API_BASE_URL}/api/webapp-log`, {
+        await fetch(`${API_BASE_URL}/api/logs/webapp`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -477,12 +635,16 @@ async function logWebAppEvent(level, message, context = {}) {
             body: JSON.stringify({
                 level,
                 message,
-                context: fullContext
+                context: {
+                    ...context,
+                    platform: tg.platform,
+                    colorScheme: tg.colorScheme,
+                    viewportHeight: tg.viewportHeight
+                }
             })
         });
-    } catch (e) {
-        // Log locally if server logging fails
-        console.error('Failed to log event to server:', e);
+    } catch (error) {
+        console.error('Failed to log event:', error);
     }
 }
 ```
@@ -550,4 +712,105 @@ The next phase will involve implementing the admin chat interface. Key component
    - Common API endpoints with role-based permissions
    - Consistent message format for both interfaces
 
-The existing WebApp code provides a strong foundation for these enhancements, with the modular architecture making it straightforward to extend. 
+The existing WebApp code provides a strong foundation for these enhancements, with the modular architecture making it straightforward to extend.
+
+## Message Handling and Display (Updated in v1.2.1)
+
+The WebApp implements a robust message handling system with recent improvements to fix visibility issues:
+
+### Enhanced Message Rendering (v1.2.1)
+
+The message rendering logic was updated to properly handle messages from both admin and user sides:
+
+```javascript
+// Enhanced message rendering with proper visibility for all parties
+function addMessage(message) {
+    // Prevent duplicate messages (added in v1.2.1)
+    if (message.id) {
+        const existingMsg = document.querySelector(`[data-message-id="${message.id}"]`);
+        if (existingMsg) {
+            console.log(`Message ID ${message.id} already exists, skipping`);
+            return;
+        }
+    }
+    
+    const isAdmin = message.sender_type === 'admin';
+    const isMine = message.sender_id.toString() === currentUserId.toString();
+    
+    // Create message element with proper styling for visibility
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isAdmin ? 'admin-message' : 'user-message'} ${isMine ? 'my-message' : ''}`;
+    
+    // Add data attribute for deduplication (added in v1.2.1)
+    if (message.id) {
+        messageDiv.setAttribute('data-message-id', message.id);
+    }
+
+    // Add sender label for clarity (added in v1.2.1)
+    const senderLabel = isAdmin ? 'Admin' : 'User';
+    
+    // Enhanced message structure with sender identification
+    messageDiv.innerHTML = `
+        <div class="message-sender">${isMine ? 'You' : senderLabel}</div>
+        <div class="message-content">${escapeHtml(message.message)}</div>
+        <div class="message-time">${time}</div>
+        <div class="message-timestamp" style="display: none;">${timestamp}</div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+}
+```
+
+Key improvements in v1.2.1:
+1. Fixed message visibility between admin and user
+2. Added message deduplication
+3. Added clear sender labels
+4. Improved message styling for better visibility
+5. Fixed ID comparison with string conversion
+
+### CSS Styling Updates
+
+The styling was enhanced to provide better visual differentiation:
+
+```css
+/* Styling for user vs admin messages (updated in v1.2.1) */
+.user-message {
+    background-color: var(--tg-theme-secondary-bg-color);
+    color: var(--tg-theme-text-color);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+}
+
+.admin-message {
+    background-color: var(--tg-theme-button-color);
+    color: var(--tg-theme-button-text-color);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+}
+
+/* Styling for own messages vs others (updated in v1.2.1) */
+.my-message {
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+    border-bottom-left-radius: var(--message-radius);
+}
+
+/* Special styling for own messages by type (added in v1.2.1) */
+.my-message.user-message {
+    background-color: #e1f5fe;
+    color: #0277bd;
+}
+
+.my-message.admin-message {
+    background-color: #1976d2;
+    color: white;
+}
+
+/* Sender label styling (added in v1.2.1) */
+.message-sender {
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 2px;
+    opacity: 0.8;
+}
+```

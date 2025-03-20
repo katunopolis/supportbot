@@ -1,5 +1,7 @@
 # Telegram Support Bot
 
+[![Stable Version: 1.2.1](https://img.shields.io/badge/Stable%20Version-1.2.1-brightgreen)]()
+
 A support bot for Telegram that allows users to submit support requests and admins to manage them, including a fully-featured chat interface.
 
 ## Features
@@ -10,6 +12,26 @@ A support bot for Telegram that allows users to submit support requests and admi
 - Chat interface for admins to communicate with users
 - Admin notification system for new support requests
 - Database storage for all requests and messages
+- Robust ISO 8601 timestamp handling for all date/time operations
+
+## Recent Updates
+
+### Version 1.2.1 - Stable Release (March 2025)
+
+The application has been updated to v1.2.1 with critical fixes:
+
+- **Fixed Message Visibility**: Solved issue where admins and users could only see their own messages in chat
+- **Resolved Timestamp Handling**: Improved ISO 8601 handling across time zones for consistent message ordering
+- **Enhanced Error Handling**: Added robust fallback mechanisms for timestamp parsing and API errors
+- **Improved User Interface**: Added sender labels and better visual differentiation between message types
+- **API Routing Fix**: Corrected handling of chat API endpoints to properly route requests
+
+All changes have been extensively tested and verified in production environments.
+
+For detailed implementation, see:
+- [docs/TIMESTAMP-HANDLING.md](docs/TIMESTAMP-HANDLING.md) - ISO 8601 timestamp implementation
+- [docs/WEBAPP-KNOWN-ISSUES.md](docs/WEBAPP-KNOWN-ISSUES.md) - Resolved issues documentation
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) - Complete version history
 
 ## Setup
 
@@ -148,14 +170,39 @@ python run_test.py local      # Test locally in browser
 python run_test.py webhook-set    # Set up webhook
 python run_test.py webhook-delete # Delete webhook
 python run_test.py ngrok-update   # Update ngrok URL in configuration
+python run_test.py timestamps     # Test ISO 8601 timestamp handling
 
 # Or running tests directly
 cd tests && python test_bot_connection.py
 cd tests && python test_webapp_url.py
 cd tests && python test_local_webapp.py
 cd tests && python test_webhook_setup.py --action set
+cd tests && python test_timestamp_handling.py
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Documentation
+
+For more detailed information, see the docs directory:
+
+- [docs/SETUP.md](docs/SETUP.md) - Detailed setup instructions
+- [docs/TESTING.md](docs/TESTING.md) - Comprehensive testing documentation
+- [docs/API.md](docs/API.md) - API endpoint documentation
+- [docs/WEBAPP-CODE-MAP.md](docs/WEBAPP-CODE-MAP.md) - WebApp code structure map
+- [docs/TIMESTAMP-HANDLING.md](docs/TIMESTAMP-HANDLING.md) - ISO 8601 timestamp implementation
+
+## Recent Updates
+
+### ISO 8601 Timestamp Handling (April 2025)
+
+The application has been updated with robust timestamp handling:
+
+- All timestamps now use ISO 8601 format with UTC timezone
+- Backend uses `datetime.now(timezone.utc)` for timestamp creation
+- Timestamps include 'Z' suffix to indicate UTC timezone
+- Frontend includes validation and normalization functions
+- Improved chat polling with better error handling and resource management
+- See [docs/TIMESTAMP-HANDLING.md](docs/TIMESTAMP-HANDLING.md) for detailed implementation 

@@ -253,9 +253,9 @@ def monitor_query_time(query_func):
 ```python
 class Request:
     id: int
-    user_id: int
+    user_id: bigint  # Changed from int to bigint to support large Telegram user IDs
     issue: str
-    assigned_admin: Optional[int]
+    assigned_admin: Optional[bigint]  # Changed from int to bigint to support large Telegram admin IDs
     status: str
     solution: Optional[str]
     created_at: datetime
@@ -267,7 +267,7 @@ class Request:
 class Message:
     id: int
     request_id: int
-    sender_id: int
+    sender_id: bigint  # Changed from int to bigint to support large Telegram user IDs
     sender_type: str  # 'user' or 'admin'
     message: str
     timestamp: datetime
@@ -296,6 +296,12 @@ alembic upgrade head
 # Rollback
 alembic downgrade -1
 ```
+
+### Recent Schema Changes
+1. 2025-03-19: Changed user_id, assigned_admin, and sender_id columns to BIGINT type to support large Telegram IDs
+   - Affected tables: requests (user_id, assigned_admin), messages (sender_id)
+   - Migration file: fix_bigint_columns.py
+   - Reason: Support for Telegram user IDs that exceed 32-bit integer range
 
 ### Best Practices
 1. Regular backups before migrations

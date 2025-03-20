@@ -205,7 +205,7 @@ async def view_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton(
                         "Open Support Chat", 
                         web_app=WebAppInfo(
-                            url=f"{BASE_WEBAPP_URL}/chat.html?requestId={request_id}&adminId={admin_id}"
+                            url=f"{BASE_WEBAPP_URL}/chat.html?request_id={request_id}&admin_id={admin_id}"
                         )
                     )
                 ])
@@ -219,7 +219,7 @@ async def view_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton(
                         "Open Support Chat", 
                         web_app=WebAppInfo(
-                            url=f"{BASE_WEBAPP_URL}/chat.html?requestId={request_id}&adminId={admin_id}"
+                            url=f"{BASE_WEBAPP_URL}/chat.html?request_id={request_id}&admin_id={admin_id}"
                         )
                     )
                 ])
@@ -313,7 +313,7 @@ async def handle_admin_callbacks(update: Update, context: ContextTypes.DEFAULT_T
                         InlineKeyboardButton(
                             "Open Support Chat", 
                             web_app=WebAppInfo(
-                                url=f"{BASE_WEBAPP_URL}/chat.html?requestId={request_id}&adminId={admin_id}"
+                                url=f"{BASE_WEBAPP_URL}/chat.html?request_id={request_id}&admin_id={admin_id}"
                             )
                         )
                     ],
@@ -425,4 +425,106 @@ async def handle_resolution_message(update: Update, context: ContextTypes.DEFAUL
         del context.user_data["resolving_request"]
         return True
         
-    return False  # Not handling resolution 
+    return False  # Not handling resolution
+
+async def handle_solution_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle solution messages from admins after clicking Solve button."""
+    # Check if there's a pending solve request
+    if "solving_request_id" not in context.user_data:
+        # Not handling a solution message
+        return False
+        
+    # Get the request ID that's being solved
+    request_id = context.user_data["solving_request_id"]
+    solution_text = update.message.text
+    admin_id = update.effective_user.id
+    admin_name = update.effective_user.full_name
+    
+    # Access the database
+    with next(get_db()) as db:
+        try:
+            # Find the request
+            request = db.query(Request).filter(Request.id == request_id).first()
+            
+            if not request:
+                await update.message.reply_text(f"Error: Request #{request_id} not found.")
+                context.user_data.pop("solving_request_id", None)
+                return True
+                
+            # Update the request with solution and change status
+            request.solution = solution_text
+            request.status = "solved"
+            request.updated_at = datetime.now()
+            db.commit()
+            
+            # Add the solution message to the chat
+            solution_message = Message(
+                request_id=request_id,
+                sender_id=admin_id,
+                sender_type="admin",
+                message=f"This request has been marked as resolved with solution: {solution_text}",
+                timestamp=datetime.now()
+            )
+            db.add(solution_message)
+            db.commit()
+            
+            # Notify the user about the resolution
+            try:
+                from app.bot.bot import bot
+                await bot.send_message(
+                    chat_id=request.user_id,
+                    text=f"✅ Your support request (#{request_id}) has been resolved.\n\n"
+                         f"📝 Solution: {solution_text}\n\n"
+                         f"Thank you for using our support service!"
+                )
+                
+                # Notify admin group about the resolution (if needed)
+                if ADMIN_GROUP_ID:
+                    await bot.send_message(
+                        chat_id=ADMIN_GROUP_ID,
+                        text=f"✅ Request #{request_id} resolved by {admin_name}\n\n"
+                             f"📝 Solution: {solution_text}"
+                    )
+            except Exception as e:
+                logging.error(f"Failed to send resolution notifications: {e}")
+                
+            # Confirm to the admin
+            await update.message.reply_text(
+                f"✅ Request #{request_id} has been marked as resolved.\n\n"
+                f"Solution: {solution_text}"
+            )
+            
+            # Clear the solving state
+            context.user_data.pop("solving_request_id", None)
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error handling solution message: {e}")
+            await update.message.reply_text(
+                f"❌ Error resolving request #{request_id}. Please try again."
+            )
+            return True 
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages from users and admins."""
+    if not update.message or not update.message.text:
+        return
+        
+    user_id = update.effective_user.id
+    message_text = update.message.text
+    
+    # Check if this is a solution message for a request being resolved
+    solution_handled = await handle_solution_message(update, context)
+    if solution_handled:
+        return
+        
+    # Check if we're expecting a resolution message
+    if context.user_data.get(f"resolving_request"):
+        # Pass to handle_resolution_message
+        await handle_resolution_message(update, context)
+        return
+        
+    # Default handling for other messages
+    await update.message.reply_text(
+        "I'm not sure how to handle that message. Please use commands like /start, /help, or /request."
+    ) 

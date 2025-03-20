@@ -15,7 +15,7 @@ services:
       - MAX_CONNECTIONS=20
       - POOL_TIMEOUT=30
       - ENVIRONMENT=development
-      - RAILWAY_PUBLIC_DOMAIN=${RAILWAY_PUBLIC_DOMAIN:-localhost}
+      - RAILWAY_PUBLIC_DOMAIN=cc04-185-63-98-50.ngrok-free.app
       - WEBAPP_SERVICE_URL=http://webapp:3000
     depends_on:
       - db

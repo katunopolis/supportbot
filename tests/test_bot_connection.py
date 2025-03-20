@@ -77,7 +77,11 @@ if __name__ == "__main__":
     # Get environment information
     env = os.getenv("ENVIRONMENT", "not set")
     base_url = os.getenv("BASE_WEBAPP_URL", "not set")
-    railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "not set")
+    railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+    if not railway_domain:
+        logger.error("RAILWAY_PUBLIC_DOMAIN not found in environment variables")
+        logger.info("Using hardcoded ngrok domain instead")
+        railway_domain = "cc04-185-63-98-50.ngrok-free.app"
     
     logger.info(f"Environment: {env}")
     logger.info(f"BASE_WEBAPP_URL: {base_url}")

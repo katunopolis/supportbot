@@ -49,7 +49,7 @@ ENVIRONMENT=development
 # Railway settings (needed even for local development)
 # For local testing with ngrok, use your ngrok URL without https:// prefix
 # Example: 1a2b3c4d.ngrok.io
-RAILWAY_PUBLIC_DOMAIN=1fe4-185-63-98-50.ngrok-free.app
+RAILWAY_PUBLIC_DOMAIN=6015-185-63-98-50.ngrok-free.app
 ```
 
 ### 3. Set Up ngrok for Webhook Testing
@@ -184,7 +184,7 @@ ENVIRONMENT=development
 
 # Railway settings (needed even for local development)
 # For local testing with ngrok, use your ngrok URL without https:// prefix
-RAILWAY_PUBLIC_DOMAIN=1fe4-185-63-98-50.ngrok-free.app
+RAILWAY_PUBLIC_DOMAIN=6015-185-63-98-50.ngrok-free.app
 ```
 
 ### 4. Webapp Configuration

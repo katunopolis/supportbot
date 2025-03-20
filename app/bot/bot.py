@@ -1,15 +1,24 @@
 import logging
 import asyncio
 from telegram import Bot, Update, BotCommand
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, MessageHandler, 
+    filters, ContextTypes
+)
 from app.config import WEBHOOK_URL, MAX_CONNECTIONS, POOL_TIMEOUT, RATE_LIMIT, RATE_LIMIT_TIME
 from app.bot.handlers.start import start, help_command, request_support, test_command
-from app.bot.handlers.admin import list_requests, view_request, handle_admin_callbacks, handle_resolution_message
+from app.bot.handlers.admin import list_requests, view_request, handle_admin_callbacks, handle_message
 from app.database.session import get_db, SessionLocal
 from sqlalchemy import text
 import os
 from dotenv import load_dotenv
-from app.bot.handlers.support import notify_admin_group, collect_issue
+from app.bot.handlers.support import notify_admin_group, collect_issue, handle_callback_query
+import traceback
+from typing import Callable, Any, Awaitable, Optional
+import time
+from collections import defaultdict
+from functools import wraps
+import httpx
 
 load_dotenv()
 
@@ -25,10 +34,54 @@ bot_app = None
 # Command rate limiting
 command_semaphore = asyncio.Semaphore(20)  # Limit concurrent command processing
 
-async def rate_limited_handler(handler, update, context):
-    """Wrap command handlers with rate limiting."""
-    async with command_semaphore:
+# Rate limiting setup
+rate_limits = defaultdict(lambda: {"count": 0, "reset_time": time.time() + RATE_LIMIT_TIME})
+
+async def rate_limited_handler(handler: Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[Any]], 
+                        update: Update, 
+                        context: ContextTypes.DEFAULT_TYPE) -> Any:
+    """Wrapper for rate limiting handlers."""
+    if not update.effective_user:
         return await handler(update, context)
+        
+    user_id = update.effective_user.id
+    current_time = time.time()
+    
+    # Reset rate limit if time expired
+    if current_time > rate_limits[user_id]["reset_time"]:
+        rate_limits[user_id] = {"count": 0, "reset_time": current_time + RATE_LIMIT_TIME}
+    
+    # Check if rate limited
+    if rate_limits[user_id]["count"] >= RATE_LIMIT:
+        # If private chat, inform user
+        if update.effective_chat and update.effective_chat.type == "private":
+            try:
+                remaining_time = int(rate_limits[user_id]["reset_time"] - current_time)
+                await update.effective_chat.send_message(
+                    f"Rate limit exceeded. Please try again in {remaining_time} seconds."
+                )
+            except Exception as e:
+                logging.error(f"Failed to send rate limit message: {e}")
+        return None
+        
+    # Increment rate limit counter
+    rate_limits[user_id]["count"] += 1
+    
+    try:
+        # Process the handler
+        return await handler(update, context)
+    except Exception as e:
+        logging.error(f"Error in handler: {e}")
+        traceback.print_exc()
+        # Try to notify user of error
+        if update.effective_chat and update.effective_chat.type == "private":
+            try:
+                await update.effective_chat.send_message(
+                    "Sorry, an error occurred while processing your request."
+                )
+            except Exception as notify_err:
+                logging.error(f"Failed to send error notification: {notify_err}")
+        raise
 
 async def check_database():
     """Check database connection with proper error handling."""
@@ -123,9 +176,11 @@ async def setup_handlers():
         )
         
         # Callback query handler for admin actions (assign/resolve)
+        # These follow the format "assign_123_456" or "resolve_123"
         bot_app.add_handler(
             CallbackQueryHandler(
-                lambda u, c: rate_limited_handler(handle_admin_callbacks, u, c)
+                lambda u, c: rate_limited_handler(handle_admin_callbacks, u, c),
+                pattern=r"^(assign|resolve)_\d+(_\d+)?$"
             )
         )
         
@@ -137,10 +192,12 @@ async def setup_handlers():
             )
         )
         
-        # Add callback query handler for inline buttons
+        # Add callback query handler for support inline buttons from admin group
+        # These follow the format "assign_123", "view_123", "chat_123", or "solve_123"
         bot_app.add_handler(
             CallbackQueryHandler(
-                lambda u, c: rate_limited_handler(handle_callback_query, u, c)
+                lambda u, c: rate_limited_handler(handle_callback_query, u, c),
+                pattern=r"^(assign|view|chat|solve)_\d+$"
             )
         )
         
@@ -289,7 +346,8 @@ async def handle_message(update: Update, context):
     """Handle text messages - resolution messages from admins and issue collection"""
     # First try to handle as admin resolution message
     try:
-        if await handle_resolution_message(update, context):
+        from app.bot.handlers.admin import handle_message as admin_handle_message
+        if await admin_handle_message(update, context):
             return
     except Exception as e:
         logging.error(f"Error handling resolution message: {e}")
@@ -319,4 +377,24 @@ async def shutdown():
             await bot.shutdown()
             logging.info("Bot shutdown successful")
     except Exception as e:
-        logging.error(f"Error during bot shutdown: {e}") 
+        logging.error(f"Error during bot shutdown: {e}")
+
+# Set up application handlers
+application = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(CommandHandler("request", request_support))
+application.add_handler(CommandHandler("test", test_command))
+application.add_handler(CommandHandler("requests", list_requests))
+application.add_handler(CommandHandler("view", view_request))
+
+# Add callback query handlers
+application.add_handler(CallbackQueryHandler(handle_admin_callbacks, pattern=r"^admin:"))
+application.add_handler(CallbackQueryHandler(handle_callback_query, pattern=r"^(assign|view|chat|solve)_\d+$"))
+
+# Add message handler for normal text messages
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# Function to get the application
+def get_application():
+    return application 

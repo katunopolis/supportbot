@@ -31,41 +31,61 @@ WEBHOOK_URL = f"https://{RAILWAY_DOMAIN}/webhook"
 WEBAPP_PUBLIC_URL = os.getenv("WEBAPP_PUBLIC_URL")
 
 # Set BASE_WEBAPP_URL based on environment and available URLs
-if WEBAPP_PUBLIC_URL:
-    # Use explicitly provided public URL for webapp if available
-    BASE_WEBAPP_URL = WEBAPP_PUBLIC_URL
-elif os.getenv("ENVIRONMENT") == "development" and "ngrok" in RAILWAY_DOMAIN:
-    # For local development with ngrok, use same domain but direct to webapp container
-    BASE_WEBAPP_URL = f"http://localhost:3000"
-elif os.getenv("ENVIRONMENT") == "development":
-    # For local development without ngrok
-    BASE_WEBAPP_URL = "http://localhost:3000"
-else:
-    # Production default
-    BASE_WEBAPP_URL = "https://webapp-support-bot-production.up.railway.app"
+BASE_WEBAPP_URL = os.getenv("BASE_WEBAPP_URL")
+if not BASE_WEBAPP_URL:
+    if WEBAPP_PUBLIC_URL:
+        # Use explicitly provided public URL for webapp if available
+        BASE_WEBAPP_URL = WEBAPP_PUBLIC_URL
+    elif os.getenv("ENVIRONMENT") == "development" and "ngrok" in RAILWAY_DOMAIN:
+        # For local development with ngrok, use ngrok domain
+        BASE_WEBAPP_URL = f"https://{RAILWAY_DOMAIN}"
+    elif os.getenv("ENVIRONMENT") == "development":
+        # For local development without ngrok
+        BASE_WEBAPP_URL = "http://localhost:3000"
+    else:
+        # Production default
+        BASE_WEBAPP_URL = "https://webapp-support-bot-production.up.railway.app"
 
-def get_webapp_url():
-    """Generate a versioned web app URL."""
-    base_url = BASE_WEBAPP_URL
-    
-    # Add versioning parameters
-    version_param = datetime.now().strftime('%Y%m%d%H%M%S')
-    random_param = os.urandom(4).hex()
-    
-    # Always use the RAILWAY_PUBLIC_DOMAIN for WebApp URLs in development mode
-    # with ngrok since Telegram requires HTTPS URLs for WebApps
-    if os.getenv("ENVIRONMENT") == "development" and "ngrok" in RAILWAY_DOMAIN and not WEBAPP_PUBLIC_URL:
-        # Use the same ngrok domain but with the webapp port
-        return f"https://{RAILWAY_DOMAIN}/?v={version_param}&r={random_param}"
-    
-    return f"{base_url}/?v={version_param}&r={random_param}"
+# Ensure BASE_WEBAPP_URL is a proper URL that works with Telegram WebApp
+if not BASE_WEBAPP_URL.startswith(("http://", "https://")):
+    # Add protocol if missing
+    BASE_WEBAPP_URL = f"https://{BASE_WEBAPP_URL}"
 
-# Logging Configuration
-LOG_LEVEL = "DEBUG"
-LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
+# For Telegram WebApp, we must use HTTPS
+if "telegram" in os.getenv("ENVIRONMENT", "").lower() and not BASE_WEBAPP_URL.startswith("https://"):
+    # Force HTTPS for Telegram WebApp
+    BASE_WEBAPP_URL = BASE_WEBAPP_URL.replace("http://", "https://")
+
+print(f"Using BASE_WEBAPP_URL: {BASE_WEBAPP_URL}")
 
 # Web app specific URL for forms
 WEB_APP_URL = os.getenv("WEB_APP_URL", f"{BASE_WEBAPP_URL}/support-form.html")
+
+def get_webapp_url():
+    """Generate a clean web app URL that's compatible with Telegram WebApp requirements."""
+    base_url = BASE_WEBAPP_URL
+    
+    # Always ensure we have HTTPS for Telegram WebApps
+    if not base_url.startswith("https://"):
+        base_url = base_url.replace("http://", "https://")
+    
+    # For public groups, we need to use the most stable, clean URL possible
+    # Avoid query parameters and ensure we're using a specific HTML file
+    if WEB_APP_URL and WEB_APP_URL.endswith(".html"):
+        # Use the explicit HTML file path if configured
+        return WEB_APP_URL
+    
+    # Default to the support form if no specific URL is configured
+    # No query parameters or versioning for maximum compatibility
+    return f"{base_url}/support-form.html"
+
+# Logging Configuration
+LOG_LEVEL = "INFO"
+LOG_FORMAT = '''
+[%(asctime)s] %(levelname)s:
+  Source: %(name)s
+  Message: %(message)s
+'''
 
 # Rate limits
 RATE_LIMIT = int(os.getenv("RATE_LIMIT", "5"))  # Default to 5 requests

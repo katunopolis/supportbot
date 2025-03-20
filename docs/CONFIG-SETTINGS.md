@@ -18,6 +18,9 @@ WEB_APP_URL=https://example.com/support-form.html
 
 # Admin Configuration
 ADMIN_GROUP_ID=-4771220922
+
+# Logging Configuration
+LOG_LEVEL=INFO  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
 ## Configuration File
@@ -47,6 +50,9 @@ WEB_APP_URL = os.getenv("WEB_APP_URL", f"{BASE_WEBAPP_URL}/support-form.html")
 
 # Admin group ID (for notifications)
 ADMIN_GROUP_ID = os.getenv("ADMIN_GROUP_ID", "-4771220922")
+
+# Logging Configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 ```
 
 ## Settings Description
@@ -174,3 +180,88 @@ if os.getenv("ENVIRONMENT") == "development" and "ngrok" in RAILWAY_DOMAIN and n
 2. **CORS Headers**: Ensure your web server has proper CORS headers to allow loading from Telegram domains
 3. **Validation**: Always validate query parameters received in the WebApp to prevent injection attacks
 4. **Authentication**: Consider implementing additional authentication for sensitive operations within the WebApp 
+
+## Logging Configuration
+
+### Basic Settings
+
+```python
+# In .env file
+LOG_LEVEL=INFO  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+```
+
+### Log Format
+
+The log format is configured in `app/config.py`:
+
+```python
+LOG_FORMAT = '''
+[%(asctime)s] %(levelname)s:
+  Source: %(name)s
+  Message: %(message)s
+'''
+```
+
+This format provides:
+- Timestamp in ISO format
+- Log level (INFO, WARNING, etc.)
+- Source module name
+- Actual log message
+
+### Log Filtering
+
+The logging system includes smart filtering to reduce noise:
+
+1. **HTTP Request Filtering**:
+   - Only shows important HTTP requests
+   - Filters out debug-level framework messages
+   - Keeps request/response information for debugging
+
+2. **Telegram Bot Filtering**:
+   - Filters out routine bot framework messages
+   - Shows important bot events and errors
+   - Keeps webhook and command processing logs
+
+3. **Database Logging**:
+   - Logs are stored in the database
+   - Includes context information for debugging
+   - Automatically manages old log cleanup
+
+### Log Handlers
+
+Two main log handlers are configured:
+
+1. **Console Handler**:
+   - Real-time output to container logs
+   - Filtered for readability
+   - Color-coded by log level (when supported)
+
+2. **Database Handler**:
+   - Persistent storage of logs
+   - Queryable for analysis
+   - Includes extended context data
+
+### Customizing Log Levels
+
+You can adjust log levels for specific components:
+
+```python
+# In app/logging/setup.py
+logging.getLogger('httpcore').setLevel(logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.INFO)
+logging.getLogger('telegram').setLevel(logging.INFO)
+```
+
+### Log Database Schema
+
+The Log model in the database includes:
+
+```sql
+CREATE TABLE logs (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP,
+    level VARCHAR(20),
+    message TEXT,
+    context TEXT
+);
+``` 

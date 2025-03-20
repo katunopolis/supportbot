@@ -1,7 +1,7 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
-from app.config import get_webapp_url
+from app.config import get_webapp_url, BASE_WEBAPP_URL, WEB_APP_URL
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles /start command in private chat."""
@@ -19,35 +19,89 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"Test command executed by user {update.message.from_user.id}")
 
 async def request_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles /request command from the public group by opening a Web App."""
+    """Handles /request command by opening the appropriate WebApp based on chat type."""
     user_id = update.message.from_user.id
-    logging.info(f"User {user_id} requested support")
+    chat_type = update.effective_chat.type
+    logging.info(f"User {user_id} requested support in {chat_type} chat")
+    
+    # Use different approaches based on chat type
+    if chat_type == "private":
+        # In private chats, we can use the full WebApp URL
+        return await request_support_private(update, context)
+    else:
+        # In groups, we need special handling
+        return await request_support_group(update, context)
+
+async def request_support_private(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle support request in private chat - can use full WebApp URL."""
+    user_id = update.message.from_user.id
+    logging.info(f"Private chat support request from user {user_id}")
     
     try:
-        # Use the versioned web app URL
+        # For private chats, we can use the full form URL
+        webapp_url = get_webapp_url()
+        logging.info(f"Private chat using WebApp URL: {webapp_url}")
+        
         keyboard = [[
             InlineKeyboardButton(
                 text="Open Support Form",
-                web_app=WebAppInfo(url=get_webapp_url())
+                web_app=WebAppInfo(url=webapp_url)
             )
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Send the message with the Web App button
         await update.message.reply_text(
             "Click the button below to open our support form:",
             reply_markup=reply_markup
         )
         context.user_data[f"requesting_support_{user_id}"] = True
+        return True
     except Exception as e:
-        logging.error(f"Error creating WebApp button: {e}")
-        # Fallback to URL button if WebApp fails
-        keyboard = [[InlineKeyboardButton("Open Support Form", url=get_webapp_url())]]
+        logging.error(f"Error creating private WebApp button: {e}")
+        # Fallback to regular message
+        await update.message.reply_text(
+            "Sorry, there was an error opening the support form. Please try again later."
+        )
+        return False
+
+async def request_support_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle support request in group chat - needs special URL handling."""
+    user_id = update.message.from_user.id
+    logging.info(f"Group chat support request from user {user_id}")
+    
+    try:
+        # For group chats, we use the simplest possible URL format
+        # that Telegram will accept for public groups
+        webapp_url = f"{BASE_WEBAPP_URL}"
+        if not webapp_url.endswith('/'):
+            webapp_url += '/'
+            
+        logging.info(f"Group chat using WebApp URL: {webapp_url}")
+        
+        keyboard = [[
+            InlineKeyboardButton(
+                text="Open Support Form",
+                web_app=WebAppInfo(url=webapp_url)
+            )
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
             "Click the button below to open our support form:",
             reply_markup=reply_markup
         )
+        context.user_data[f"requesting_support_{user_id}"] = True
+        return True
+    except Exception as e:
+        logging.error(f"Error creating group WebApp button: {e}")
+        # Fallback to URL button if WebApp fails
+        keyboard = [[InlineKeyboardButton("Open Support Form", url=f"{BASE_WEBAPP_URL}/")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Click the button below to open our support form (opens in browser):",
+            reply_markup=reply_markup
+        )
+        return False
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send help information about the bot."""

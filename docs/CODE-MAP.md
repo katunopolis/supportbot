@@ -126,6 +126,68 @@ Important JavaScript functions:
 - `sendChatMessage()`: Sends new messages
 - `startPolling()`: Polls for updates
 
+### 4. Admin Panel Module (`app/admin_panel/`)
+
+The Admin Panel Module provides a modular interface for administrators to manage support requests through a Telegram WebApp.
+
+#### Module Structure
+
+- **Initialization** (`app/admin_panel/__init__.py`):
+  - Exports module components
+  - Provides feature flag access
+
+- **Configuration** (`app/admin_panel/config.py`):
+  - Handles environment-based configuration
+  - Manages feature flag settings
+  - Provides WebApp URL utilities
+
+- **Command Handlers** (`app/admin_panel/handlers.py`):
+  - Registers the `/panel` command
+  - Verifies admin permissions
+  - Opens the Admin Panel WebApp interface
+
+#### WebApp Interface (`webapp-support-bot/admin-panel.html`)
+
+- Displays all open support requests
+- Provides action buttons for each request
+- Auto-refreshes to show latest updates
+- Adapts to Telegram theme settings
+
+#### API Endpoints (`app/api/routes/admin.py`)
+
+- **Get Requests**: Retrieves support requests with filtering
+- **Solve Request**: Marks requests as solved
+
+Key features:
+- Complete module isolation through feature flagging
+- Conditional registration based on configuration
+- Graceful degradation when disabled
+
+### 5. Logging System (`app/logging/`)
+
+The logging system is organized into several components:
+
+#### Logging Setup (`app/logging/setup.py`)
+- Configures log handlers and filters
+- Sets up database logging
+- Implements smart filtering for HTTP and bot messages
+- Handles log record formatting
+
+```python
+class LogFilter:
+    def filter(self, record):
+        # Smart filtering for HTTP requests
+        if record.name == 'httpx':
+            return record.getMessage().startswith('HTTP Request:')
+        # Allow all other records
+        return True
+```
+
+#### Database Logger (`app/logging/handlers.py`)
+- Implements persistent storage of logs
+- Manages database connections
+- Handles log cleanup
+
 ## Data Flow Diagrams
 
 ### 1. Support Request Creation Flow
@@ -396,3 +458,78 @@ When implementing the full message polling functionality:
 4. **Backoff Strategy**: Implement exponential backoff for polling intervals during periods of inactivity
 
 The current implementation with empty array responses provides a reliable foundation that can be enhanced with actual message retrieval once the admin chat functionality is fully implemented. 
+
+### 4. Logging System (`app/logging/`)
+
+The logging system is organized into several components:
+
+#### Logging Setup (`app/logging/setup.py`)
+- Configures log handlers and filters
+- Sets up database logging
+- Implements smart filtering for HTTP and bot messages
+- Handles log record formatting
+
+```python
+class LogFilter:
+    def filter(self, record):
+        # Smart filtering for HTTP requests
+        if record.name == 'httpx':
+            return record.getMessage().startswith('HTTP Request:')
+        # Allow all other records
+        return True
+```
+
+#### Database Logger (`app/logging/handlers.py`)
+- Implements persistent storage of logs
+- Manages database connections
+- Handles log cleanup
+
+### 5. Error Handling and Recovery
+
+#### Bot Initialization (`app/bot/bot.py`)
+```python
+async def initialize_bot():
+    try:
+        # Initialize bot components
+        await bot.initialize()
+        await register_handlers()
+        await setup_commands()
+        await setup_webhook()
+    except Exception as e:
+        logging.error(f"Error initializing bot: {e}")
+        raise RuntimeError(f"Error during startup: {e}")
+```
+
+#### Fallback Mechanisms
+
+The system implements multiple fallback mechanisms for reliability:
+
+1. Chat API Endpoints:
+```python
+async def proxy_webapp(request: Request):
+    if path.startswith("/api/chat/"):
+        # Return empty array for message polling
+        if "messages" in path:
+            return JSONResponse(content=[])
+        # Try fixed chat endpoint
+        try:
+            request_id = chat_path.split("/")[0]
+            if request_id.isdigit():
+                return await get_fixed_chat(int(request_id))
+        except Exception as e:
+            logging.error(f"Error in chat fallback: {e}")
+```
+
+2. Fixed Chat Response:
+```python
+@app.get("/fixed-chat/{request_id}")
+async def get_fixed_chat(request_id: int):
+    """Reliable endpoint that always returns a valid chat structure."""
+    return {
+        "id": request_id,
+        "status": "active",
+        "messages": []
+    }
+```
+
+// ... existing code ... 

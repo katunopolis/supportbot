@@ -3,7 +3,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 from sqlalchemy.orm import Session
-from app.database.models import Request, Message
+from app.database.models import Request, Message, Admin
 from app.database.session import get_db
 from app.config import ADMIN_GROUP_ID, WEB_APP_URL, BASE_WEBAPP_URL
 
@@ -28,13 +28,11 @@ async def notify_admin_group(request_id: int, user_id: int, issue_text: str):
             f"Use /view_{request_id} to see details"
         )
         
-        # Create inline keyboard with buttons for admin actions
+        # Create simplified keyboard with just two buttons: Open Chat and Solve
+        # For group messages, we need to use simple callback buttons, not WebApp buttons directly
         keyboard = [
             [
-                InlineKeyboardButton("📋 Assign", callback_data=f"assign_{request_id}"),
-                InlineKeyboardButton("💬 Open Chat", callback_data=f"chat_{request_id}")
-            ],
-            [
+                InlineKeyboardButton("💬 Open Chat", callback_data=f"chat_{request_id}"),
                 InlineKeyboardButton("✅ Solve", callback_data=f"solve_{request_id}")
             ]
         ]
@@ -177,121 +175,242 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle callback queries from inline buttons."""
     query = update.callback_query
-    await query.answer()  # Answer to stop the loading state
     
-    # Extract the action and request_id from callback data
-    # Format is "{action}_{request_id}" (e.g., "assign_123")
+    # Parse the callback data
     callback_data = query.data
     
-    try:
-        # Split callback_data and handle potential format issues
-        if '_' not in callback_data:
-            await query.edit_message_text(text=f"❌ Invalid callback data format: {callback_data}")
+    # Log the callback data for debugging
+    logging.info(f"Received callback query: {callback_data}")
+    
+    # Parse the callback data (format: action_request_id)
+    parts = callback_data.split("_")
+    
+    if len(parts) < 2:
+        await query.answer("Invalid action")
+        return
+        
+    action = parts[0]
+    request_id = int(parts[1])
+    
+    # Get admin information
+    admin_id = update.effective_user.id
+    admin_name = update.effective_user.full_name
+    
+    # Use a database session
+    with next(get_db()) as db:
+        # Get the request
+        request = db.query(Request).filter(Request.id == request_id).first()
+        
+        if not request:
+            await query.answer("Request not found")
             return
             
-        action, request_id_str = callback_data.split('_', 1)
-        
-        try:
-            request_id = int(request_id_str)
-        except ValueError:
-            await query.edit_message_text(text=f"❌ Invalid request ID: {request_id_str}")
-            return
-        
-        # Get admin info
-        admin_id = update.effective_user.id
-        admin_name = update.effective_user.full_name
-        
-        # Create database session
-        db = next(get_db())
-        
-        try:
-            # Check if request exists
-            request = db.query(Request).filter(Request.id == request_id).first()
-            if not request:
-                await query.edit_message_text(text=f"❌ Request #{request_id} not found")
+        # Handle different actions
+        if action == "assign":
+            # Extract admin ID from callback if available
+            admin_id_from_callback = int(parts[2]) if len(parts) > 2 else admin_id
+            
+            # Make sure callback admin ID matches current user
+            if admin_id_from_callback != admin_id:
+                await query.answer(f"Invalid admin ID in callback")
                 return
+                
+            # Check if already assigned
+            if request.assigned_admin is not None:
+                await query.answer("This request is already assigned")
+                return
+                
+            # Assign the request
+            request.assigned_admin = str(admin_id)
+            request.status = "assigned"
+            request.updated_at = datetime.now()
+            db.commit()
             
-            # Handle different actions
-            if action == "assign":
-                # Assign the request to this admin
-                request.assigned_admin = admin_id
-                db.commit()
-                
-                # Update message text with assignment info
-                original_text = query.message.text
-                new_text = original_text + f"\n\n👤 Assigned to: {admin_name}"
-                
-                # Create updated keyboard (remove assign button)
-                keyboard = [
-                    [
-                        InlineKeyboardButton("💬 Open Chat", callback_data=f"chat_{request_id}")
-                    ],
-                    [
-                        InlineKeyboardButton("✅ Solve", callback_data=f"solve_{request_id}")
-                    ]
+            # Add system message about assignment
+            system_message = Message(
+                request_id=request_id,
+                sender_id=admin_id,
+                sender_type="system",
+                message=f"Request assigned to admin {admin_name}",
+                timestamp=datetime.now()
+            )
+            db.add(system_message)
+            db.commit()
+            
+            # Update the group message
+            keyboard = query.message.reply_markup.inline_keyboard
+            new_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("💬 Open Chat", callback_data=f"chat_{request_id}"),
+                    InlineKeyboardButton("✅ Solve", callback_data=f"solve_{request_id}")
                 ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await query.edit_message_text(text=new_text, reply_markup=reply_markup)
-                
-            elif action == "chat":
-                # Import config for webapp URLs
-                from app.config import WEB_APP_URL, BASE_WEBAPP_URL
-                
-                # Generate proper WebApp chat URL
-                chat_url = f"{BASE_WEBAPP_URL}/chat/{request_id}"
-                
-                # Create inline keyboard with WebApp button
-                chat_button = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(
-                        text="Open Chat Interface",
-                        web_app=WebAppInfo(url=chat_url)
-                    )]
+            ])
+            
+            try:
+                # Import bot inside function to avoid circular import
+                from app.bot.bot import bot
+                await bot.edit_message_reply_markup(
+                    chat_id=ADMIN_GROUP_ID,
+                    message_id=query.message.message_id,
+                    reply_markup=new_keyboard
+                )
+            except Exception as e:
+                logging.error(f"Error updating message keyboard: {e}")
+            
+            await query.answer("Request assigned successfully")
+            
+        elif action == "view":
+            # Send private message to admin with details and proper WebApp button
+            # First, get full request details
+            messages = db.query(Message).filter(
+                Message.request_id == request_id
+            ).order_by(Message.timestamp.desc()).limit(5).all()
+            
+            # Format request details
+            user_id = request.user_id
+            created_at = request.created_at.strftime("%Y-%m-%d %H:%M")
+            updated_at = request.updated_at.strftime("%Y-%m-%d %H:%M")
+            status = request.status
+            assigned_admin = request.assigned_admin if request.assigned_admin else "None"
+            issue = request.issue
+            solution = request.solution if request.solution else "Not resolved yet"
+            
+            # Create a formatted message
+            response = (
+                f"📝 <b>Request #{request_id}</b>\n\n"
+                f"👤 <b>User ID:</b> {user_id}\n"
+                f"📅 <b>Created:</b> {created_at}\n"
+                f"🔄 <b>Updated:</b> {updated_at}\n"
+                f"📊 <b>Status:</b> {status}\n"
+                f"👨‍💼 <b>Assigned Admin:</b> {assigned_admin}\n\n"
+                f"❓ <b>Issue:</b>\n{issue}\n\n"
+            )
+            
+            if status == "resolved":
+                response += f"✅ <b>Solution:</b>\n{solution}\n\n"
+            
+            # Create appropriate buttons based on the status
+            private_keyboard = []
+            
+            # Add WebApp button only in private message to admin
+            if status in ["pending", "in_progress"]:
+                private_keyboard.append([
+                    InlineKeyboardButton(
+                        "Open Support Chat", 
+                        web_app=WebAppInfo(
+                            url=f"{BASE_WEBAPP_URL}/chat.html?request_id={request_id}&admin_id={admin_id}"
+                        )
+                    )
                 ])
-                
-                # Send WebApp button to admin
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"Open chat interface for request #{request_id}:",
-                    reply_markup=chat_button
-                )
-                
-                # Acknowledge in the group
-                await query.edit_message_text(
-                    text=query.message.text + f"\n\n💬 Chat opened by: {admin_name}",
-                    reply_markup=query.message.reply_markup
-                )
-                
-            elif action == "solve":
-                # Mark the request as solved
-                request.status = "solved"
+            
+            # Add appropriate action button based on status
+            if status == "pending":
+                private_keyboard.append([
+                    InlineKeyboardButton(
+                        "Assign to me", 
+                        callback_data=f"assign_{request_id}_{admin_id}"
+                    )
+                ])
+            elif status == "in_progress" and request.assigned_admin == str(admin_id):
+                private_keyboard.append([
+                    InlineKeyboardButton(
+                        "Mark as resolved", 
+                        callback_data=f"resolve_{request_id}"
+                    )
+                ])
+            
+            # Send detailed view to admin as private message
+            private_reply_markup = InlineKeyboardMarkup(private_keyboard)
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=response,
+                reply_markup=private_reply_markup,
+                parse_mode="HTML"
+            )
+            
+            # Acknowledge in the group
+            await query.edit_message_text(
+                text=query.message.text + f"\n\n👁️ Details viewed by: {admin_name}",
+                reply_markup=query.message.reply_markup
+            )
+            
+        elif action == "chat":
+            # Admin wants to open chat with this user
+            if request.assigned_admin != str(admin_id) and request.assigned_admin is not None:
+                assigned_admin = db.query(Admin).filter(Admin.id == request.assigned_admin).first()
+                if assigned_admin:
+                    await query.answer(f"This request is assigned to {assigned_admin.name}")
+                    return
+            
+            # If not assigned to anyone, assign it to this admin
+            if request.assigned_admin is None:
+                request.assigned_admin = str(admin_id)
                 request.updated_at = datetime.now()
+                request.status = "assigned"
                 db.commit()
                 
-                # Update message
-                await query.edit_message_text(
-                    text=query.message.text + f"\n\n✅ Solved by: {admin_name}",
-                    reply_markup=None  # Remove buttons
+                # Add system message about assignment to chat
+                system_message = Message(
+                    request_id=request_id,
+                    sender_id=admin_id,
+                    sender_type="system", 
+                    message=f"This request has been assigned to {admin_name}",
+                    timestamp=datetime.now()
                 )
-                
-                # Notify the user that their request was solved
-                try:
-                    await context.bot.send_message(
-                        chat_id=request.user_id,
-                        text=f"✅ Your support request (#{request_id}) has been resolved. Thank you for using our support service!"
-                    )
-                except Exception as e:
-                    logging.error(f"Failed to notify user about solved request: {e}")
+                db.add(system_message)
+                db.commit()
             
-            else:
-                await query.edit_message_text(text=f"❌ Unknown action: {action}")
+            # Import bot inside function to avoid circular import
+            from app.bot.bot import bot
             
-        except Exception as e:
-            logging.error(f"Error handling callback query: {e}")
-            await query.edit_message_text(text=f"❌ Error processing action: {str(e)}")
-        finally:
-            db.close()
-        
-    except Exception as e:
-        logging.error(f"Error handling callback query: {e}")
-        await query.edit_message_text(text=f"❌ Error processing callback query: {str(e)}") 
+            # Create a WebApp URL for the chat interface with proper Telegram init parameter
+            # Use a clear format that's easier to parse
+            chat_url = f"{BASE_WEBAPP_URL}/chat.html?request_id={request_id}&admin_id={admin_id}"
+            
+            # Create a WebApp button for the chat
+            keyboard = [[
+                InlineKeyboardButton(
+                    "📱 Open Chat Interface",
+                    web_app=WebAppInfo(url=chat_url)
+                )
+            ]]
+            
+            # Send private message to admin with WebApp button
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=f"Click below to open the chat interface for request #{request_id}:",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                await query.answer("Opening chat interface...")
+            except Exception as e:
+                logging.error(f"Error sending chat message to admin: {e}")
+                await query.answer("Error opening chat interface")
+            
+        elif action == "solve" or action == "resolve":
+            # Store the request ID in context for the solution message
+            context.user_data["solving_request_id"] = request_id
+            
+            # Update the message in admin group
+            try:
+                from app.bot.bot import bot
+                await bot.edit_message_text(
+                    chat_id=ADMIN_GROUP_ID,
+                    message_id=query.message.message_id,
+                    text=f"✍️ Admin {admin_name} is providing resolution details for request #{request_id}...\n\nPlease wait."
+                )
+            except Exception as e:
+                logging.error(f"Error updating admin group message: {e}")
+            
+            # Ask admin for solution details in private message
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=f"Please provide a brief description of the solution for request #{request_id}:"
+                )
+                await query.answer("Please provide solution details in our private chat")
+            except Exception as e:
+                logging.error(f"Error sending solution prompt to admin: {e}")
+                await query.answer("Error requesting solution details")
+        else:
+            await query.answer("Unknown action") 
