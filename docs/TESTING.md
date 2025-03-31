@@ -65,9 +65,12 @@ For local development with ngrok, you'll need to:
    python run_test.py ngrok-update
    ```
    This will automatically:
+   - Validate the ngrok URL format and accessibility
    - Update your `.env` file with the new URL
    - Restart the supportbot container
+   - Verify container health
    - Set the webhook with the new URL
+   - Verify the final webhook configuration
    - Test the bot connection
 
 6. For the WebApp to work properly, you need to set up a separate tunnel for the webapp:
@@ -131,7 +134,17 @@ WEB_APP_URL=https://your-ngrok-domain.ngrok-free.app/support-form.html
 
    Note: Free ngrok accounts are limited to 1 simultaneous tunnel. You may need to use the configuration file approach to run multiple tunnels from a single session.
 
-3. **Update your `.env`** file with the ngrok URLs
+3. **Update your `.env`** file with the ngrok URLs using the improved update script:
+   ```bash
+   python run_test.py ngrok-update
+   ```
+   This script will:
+   - Validate the ngrok URL
+   - Update all necessary environment variables
+   - Restart the container
+   - Verify container health
+   - Set up the webhook
+   - Verify the final configuration
 
 4. **Start the bot server**:
    ```bash
@@ -140,11 +153,23 @@ WEB_APP_URL=https://your-ngrok-domain.ngrok-free.app/support-form.html
 
 #### 3. Configure Webhook
 
-Use the provided test script to set up the webhook with your ngrok URL:
+The webhook configuration is now handled automatically by the `ngrok-update` script, which:
+1. Validates the ngrok URL
+2. Updates environment variables
+3. Restarts the container
+4. Verifies container health
+5. Sets the webhook with retries
+6. Verifies the final webhook configuration
 
+If you need to manually manage the webhook:
 ```bash
+# Set up the webhook
 cd tests
 python test_webhook_setup.py --action set
+
+# Delete the webhook
+cd tests
+python test_webhook_setup.py --action delete
 ```
 
 ## Bot Testing

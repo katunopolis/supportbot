@@ -9,6 +9,7 @@ when a new ngrok tunnel is started. It:
 2. Updates the .env file with the new URL
 3. Restarts the supportbot container
 4. Sets the webhook with the new URL
+5. Verifies the configuration
 """
 
 import os
@@ -16,7 +17,10 @@ import sys
 import re
 import subprocess
 import logging
+import time
+import httpx
 from dotenv import load_dotenv
+from typing import Optional, Tuple
 
 # Add parent directory to path so we can import from the app package
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,13 +32,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def update_env_file(ngrok_url):
+def validate_ngrok_url(url: str) -> Tuple[bool, Optional[str]]:
+    """Validate the ngrok URL format and accessibility."""
+    # Check URL format
+    if not url.startswith("https://") or not "ngrok-free.app" in url:
+        return False, "Invalid ngrok URL format. Must start with https:// and contain ngrok-free.app"
+    
+    # Check if webhook endpoint is accessible
+    try:
+        response = httpx.get(f"{url}/webhook", timeout=5.0)
+        if response.status_code not in [200, 404, 405]:  # 404/405 are acceptable as they indicate the endpoint exists
+            return False, f"Webhook endpoint returned status code {response.status_code}"
+    except Exception as e:
+        return False, f"Webhook endpoint is not accessible: {str(e)}"
+    
+    return True, None
+
+def update_env_file(ngrok_url: str) -> Tuple[bool, Optional[str]]:
     """Update the .env file with the new ngrok URL."""
     # Get the domain without https:// prefix
     domain_match = re.match(r'https?://([\w\.-]+)', ngrok_url)
     if not domain_match:
-        logger.error("Invalid ngrok URL format. Expected format: https://xxxx-xx-xx-xx-xx.ngrok-free.app")
-        return False
+        return False, "Invalid ngrok URL format. Expected format: https://xxxx-xx-xx-xx-xx.ngrok-free.app"
     
     domain = domain_match.group(1)
     logger.info(f"Extracted domain: {domain}")
@@ -43,8 +62,7 @@ def update_env_file(ngrok_url):
         # Read current .env file
         env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
         if not os.path.exists(env_path):
-            logger.error(f".env file not found at {env_path}")
-            return False
+            return False, f".env file not found at {env_path}"
         
         with open(env_path, 'r') as f:
             env_lines = f.readlines()
@@ -83,18 +101,17 @@ def update_env_file(ngrok_url):
         os.environ['RAILWAY_PUBLIC_DOMAIN'] = domain
         os.environ['BASE_WEBAPP_URL'] = ngrok_url
         os.environ['WEB_APP_URL'] = f"{ngrok_url}/support-form.html"
-        return True
+        return True, None
     
     except Exception as e:
-        logger.error(f"Error updating .env file: {e}")
-        return False
+        return False, f"Error updating .env file: {str(e)}"
 
-def restart_container():
+def restart_container() -> Tuple[bool, Optional[str]]:
     """Restart the supportbot container."""
     try:
         logger.info("Restarting supportbot container...")
         result = subprocess.run(
-            ['docker-compose', 'restart', 'supportbot'],
+            ['docker', 'compose', 'restart', 'supportbot'],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             capture_output=True,
             text=True
@@ -102,51 +119,117 @@ def restart_container():
         
         if result.returncode == 0:
             logger.info("Successfully restarted supportbot container")
-            return True
+            return True, None
         else:
-            logger.error(f"Failed to restart container: {result.stderr}")
-            return False
+            return False, f"Failed to restart container: {result.stderr}"
     
     except Exception as e:
-        logger.error(f"Error restarting container: {e}")
-        return False
+        return False, f"Error restarting container: {str(e)}"
 
-def set_webhook():
-    """Set the webhook with the new ngrok URL."""
-    try:
-        logger.info("Setting webhook...")
-        
-        # Get the current environment
-        env = os.environ.copy()
-        
-        # Make sure our updated environment variables are included
-        if 'RAILWAY_PUBLIC_DOMAIN' not in env:
-            logger.error("RAILWAY_PUBLIC_DOMAIN not set in environment. Cannot continue.")
-            return False
+def verify_container_health(max_retries: int = 3) -> Tuple[bool, Optional[str]]:
+    """Verify that the container is healthy and responding."""
+    for attempt in range(max_retries):
+        try:
+            # Check if container is running
+            result = subprocess.run(
+                ['docker', 'compose', 'ps', 'supportbot'],
+                capture_output=True,
+                text=True
+            )
+            if "running" not in result.stdout.lower():
+                return False, "Container is not running"
             
-        # Run the webhook setup script with our environment
-        result = subprocess.run(
-            [sys.executable, 'test_webhook_setup.py', '--action', 'set'],
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-            capture_output=True,
-            text=True,
-            env=env  # Pass the environment variables
-        )
+            # Check if the API is responding
+            response = httpx.get("http://localhost:8000/health", timeout=5.0)
+            if response.status_code == 200:
+                return True, None
+                
+            time.sleep(2)  # Wait before retry
+            
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return False, f"Container health check failed: {str(e)}"
+            time.sleep(2)
+    
+    return False, "Container health check failed after maximum retries"
+
+def set_webhook(ngrok_url: str, max_retries: int = 3) -> Tuple[bool, Optional[str]]:
+    """Set the webhook with the new ngrok URL."""
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Setting webhook (attempt {attempt + 1}/{max_retries})...")
+            
+            # Get the current environment
+            env = os.environ.copy()
+            
+            # Make sure our updated environment variables are included
+            if 'RAILWAY_PUBLIC_DOMAIN' not in env:
+                return False, "RAILWAY_PUBLIC_DOMAIN not set in environment"
+                
+            # Run the webhook setup script with our environment
+            result = subprocess.run(
+                [sys.executable, 'test_webhook_setup.py', '--action', 'set'],
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                capture_output=True,
+                text=True,
+                env=env
+            )
+            
+            if result.returncode == 0:
+                # Verify webhook was set correctly
+                webhook_url = f"{ngrok_url}/webhook"
+                if "Webhook successfully set to" in result.stdout and webhook_url in result.stdout:
+                    logger.info("Successfully set webhook")
+                    return True, None
+                else:
+                    if attempt < max_retries - 1:
+                        logger.warning("Webhook verification failed, retrying...")
+                        time.sleep(2)
+                        continue
+                    return False, "Webhook verification failed"
+            else:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Failed to set webhook (attempt {attempt + 1}), retrying...")
+                    time.sleep(2)
+                    continue
+                return False, f"Failed to set webhook: {result.stderr}"
         
-        if result.returncode == 0:
-            logger.info("Successfully set webhook")
-            # Print the output for verification
-            for line in result.stdout.split('\n'):
-                if "Webhook successfully set to" in line:
-                    logger.info(line.strip())
-            return True
-        else:
-            logger.error(f"Failed to set webhook: {result.stderr}")
-            return False
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Error setting webhook (attempt {attempt + 1}), retrying...")
+                time.sleep(2)
+                continue
+            return False, f"Error setting webhook: {str(e)}"
+    
+    return False, "Failed to set webhook after maximum retries"
+
+def verify_webhook_config(ngrok_url: str) -> Tuple[bool, Optional[str]]:
+    """Verify the final webhook configuration."""
+    try:
+        # Get bot token from environment
+        load_dotenv()
+        token = os.getenv('SUPPORT_BOT_TOKEN')
+        if not token:
+            return False, "Bot token not found in environment"
+        
+        # Check webhook configuration
+        webhook_url = f"{ngrok_url}/webhook"
+        with httpx.Client() as client:
+            response = client.post(
+                f"https://api.telegram.org/bot{token}/getWebhookInfo",
+                timeout=10.0
+            )
+            if response.status_code == 200:
+                webhook_info = response.json()
+                if webhook_info.get('result', {}).get('url') == webhook_url:
+                    return True, None
+                else:
+                    return False, f"Webhook URL mismatch. Expected {webhook_url}, got {webhook_info.get('result', {}).get('url')}"
+            else:
+                return False, f"Failed to get webhook info: {response.text}"
     
     except Exception as e:
-        logger.error(f"Error setting webhook: {e}")
-        return False
+        return False, f"Error verifying webhook configuration: {str(e)}"
 
 def main():
     """Main function to run the script."""
@@ -158,115 +241,46 @@ def main():
     ngrok_url = input("> ").strip()
     
     # Validate input
-    if not ngrok_url.startswith("https://") or not "ngrok-free.app" in ngrok_url:
-        logger.error("Invalid ngrok URL. Please enter a valid HTTPS ngrok URL.")
+    is_valid, error_msg = validate_ngrok_url(ngrok_url)
+    if not is_valid:
+        logger.error(error_msg)
         return 1
     
     # Update the environment file
-    if not update_env_file(ngrok_url):
-        logger.error("Failed to update environment file. Aborting.")
+    success, error_msg = update_env_file(ngrok_url)
+    if not success:
+        logger.error(error_msg)
         return 1
     
     # Restart the container
-    if not restart_container():
-        logger.error("Failed to restart container. Please restart it manually.")
+    success, error_msg = restart_container()
+    if not success:
+        logger.error(error_msg)
         return 1
     
-    # Allow some time for container to start
+    # Wait for container to start and verify health
     print("Waiting for container to start...")
-    import time
     time.sleep(5)
+    success, error_msg = verify_container_health()
+    if not success:
+        logger.error(error_msg)
+        return 1
     
     # Set the webhook
-    if not set_webhook():
-        logger.error("Failed to set webhook. Please run 'python run_test.py webhook-set' manually.")
+    success, error_msg = set_webhook(ngrok_url)
+    if not success:
+        logger.error(error_msg)
         return 1
-        
-    # Update webhook directly inside the container
-    print("\nUpdating webhook inside the container...")
-    domain = ngrok_url.replace("https://", "")
-    webhook_cmd = [
-        "docker", "exec", "support-bot-supportbot-1", 
-        "python", "-c", 
-        f"""
-import os
-import asyncio
-from telegram import Bot
-from dotenv import load_dotenv
-
-async def update_webhook():
-    # Update environment variables in container
-    os.environ['RAILWAY_PUBLIC_DOMAIN'] = '{domain}'
-    os.environ['BASE_WEBAPP_URL'] = '{ngrok_url}'
-    os.environ['WEB_APP_URL'] = '{ngrok_url}/support-form.html'
     
-    # Get bot token from environment 
-    load_dotenv()
-    token = os.getenv('SUPPORT_BOT_TOKEN')
-    
-    if not token:
-        print("Error: Bot token not found")
-        return False
-        
-    # Delete and set webhook
-    webhook_url = '{ngrok_url}/webhook'
-    
-    try:
-        bot = Bot(token=token)
-        print(f"Setting webhook to: {{webhook_url}}")
-        
-        # Delete any existing webhook
-        await bot.delete_webhook(drop_pending_updates=True)
-        print("Deleted existing webhook")
-        
-        # Set the new webhook
-        await bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=["message", "callback_query"],
-            max_connections=10,
-            drop_pending_updates=True
-        )
-        
-        # Verify webhook was set correctly
-        webhook_info = await bot.get_webhook_info()
-        if webhook_info.url == webhook_url:
-            print(f"✅ Webhook successfully set to: {{webhook_url}}")
-            return True
-        else:
-            print(f"❌ Webhook URL mismatch. Set to {{webhook_info.url}} instead of {{webhook_url}}")
-            return False
-            
-    except Exception as e:
-        print(f"Error: {{e}}")
-        return False
-
-asyncio.run(update_webhook())
-        """
-    ]
-    
-    try:
-        result = subprocess.run(webhook_cmd, capture_output=True, text=True)
-        if "Webhook successfully set" in result.stdout:
-            logger.info("Successfully updated webhook inside the container")
-        else:
-            logger.warning("Failed to update webhook inside the container")
-            if result.stderr:
-                logger.warning(f"Error: {result.stderr}")
-    except Exception as e:
-        logger.warning(f"Error running webhook update in container: {e}")
-    
-    # Test bot connection
-    print("\nTesting bot connection...")
-    result = subprocess.run(
-        [sys.executable, 'test_bot_connection.py'],
-        cwd=os.path.dirname(os.path.abspath(__file__)),
-        capture_output=False
-    )
+    # Verify final webhook configuration
+    success, error_msg = verify_webhook_config(ngrok_url)
+    if not success:
+        logger.error(error_msg)
+        return 1
     
     print("\n=== Update Complete ===")
     print(f"Your bot is now configured to use: {ngrok_url}")
     print("Try sending /start or /request to your bot to verify everything works!")
-    
     return 0
 
 if __name__ == "__main__":

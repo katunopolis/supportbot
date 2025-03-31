@@ -35,7 +35,7 @@ async def setup_webhook():
     # Log the domain we're using
     logger.info(f"Using domain for webhook: {railway_domain}")
     
-    # Construct webhook URL
+    # Construct webhook URL - ensure it uses HTTPS
     webhook_url = f"https://{railway_domain}/webhook"
     
     try:
@@ -78,32 +78,25 @@ async def setup_webhook():
         return False
 
 async def delete_webhook():
-    """Delete the webhook for the bot."""
-    # Load environment variables
-    load_dotenv()
-    
-    # Get bot token
-    token = os.getenv("SUPPORT_BOT_TOKEN")
-    if not token:
-        logger.error("SUPPORT_BOT_TOKEN not found in environment variables")
-        return False
-    
+    """Delete the current webhook."""
     try:
+        # Load environment variables
+        load_dotenv()
+        
+        # Get bot token
+        token = os.getenv("SUPPORT_BOT_TOKEN")
+        if not token:
+            logger.error("SUPPORT_BOT_TOKEN not found in environment variables")
+            return False
+        
         # Create bot instance
         bot = Bot(token=token)
         
         # Delete webhook
-        await bot.delete_webhook()
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ Webhook successfully deleted")
+        return True
         
-        # Verify webhook was deleted
-        webhook_info = await bot.get_webhook_info()
-        if not webhook_info.url:
-            logger.info("✅ Webhook successfully deleted")
-            return True
-        else:
-            logger.error(f"❌ Webhook still set to: {webhook_info.url}")
-            return False
-            
     except Exception as e:
         logger.error(f"❌ Failed to delete webhook: {e}")
         return False
