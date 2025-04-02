@@ -34,41 +34,41 @@ async def test_bot_connection():
         
         # Get bot information
         bot_info = await bot.get_me()
-        logger.info(f"✅ Connected to bot: {bot_info.first_name} (@{bot_info.username})")
+        logger.info(f"[SUCCESS] Connected to bot: {bot_info.first_name} (@{bot_info.username})")
         
         # Check webhook status
         webhook_info = await bot.get_webhook_info()
         if webhook_info.url:
-            logger.info(f"✅ Webhook is set to: {webhook_info.url}")
+            logger.info(f"[SUCCESS] Webhook is set to: {webhook_info.url}")
             
             # Check if webhook domain matches RAILWAY_PUBLIC_DOMAIN
             railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
             if railway_domain and railway_domain not in webhook_info.url:
                 logger.warning(
-                    f"⚠️ Webhook domain mismatch: webhook uses {webhook_info.url} but RAILWAY_PUBLIC_DOMAIN is {railway_domain}"
+                    f"[WARNING] Webhook domain mismatch: webhook uses {webhook_info.url} but RAILWAY_PUBLIC_DOMAIN is {railway_domain}"
                 )
         else:
-            logger.warning("⚠️ No webhook set. Bot will not receive updates through webhook.")
+            logger.warning("[WARNING] No webhook set. Bot will not receive updates through webhook.")
         
         # Try to send a test message to admin group
         try:
             message = await bot.send_message(
                 chat_id=admin_group_id,
-                text="🔄 Testing bot connection from local environment"
+                text="[TEST] Testing bot connection from local environment"
             )
-            logger.info(f"✅ Successfully sent test message to admin group. Message ID: {message.message_id}")
+            logger.info(f"[SUCCESS] Successfully sent test message to admin group. Message ID: {message.message_id}")
         except Exception as e:
-            logger.error(f"❌ Failed to send message to admin group: {e}")
+            logger.error(f"[ERROR] Failed to send message to admin group: {e}")
         
         # Try to get updates (only works if webhook is not set)
         if not webhook_info.url:
             updates = await bot.get_updates(limit=5)
-            logger.info(f"✅ Retrieved {len(updates)} recent updates")
+            logger.info(f"[SUCCESS] Retrieved {len(updates)} recent updates")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ Bot connection test failed: {e}")
+        logger.error(f"[ERROR] Bot connection test failed: {e}")
         return False
 
 if __name__ == "__main__":
@@ -91,6 +91,6 @@ if __name__ == "__main__":
     result = asyncio.run(test_bot_connection())
     
     if result:
-        logger.info("✅ Bot connection test completed successfully")
+        logger.info("[SUCCESS] Bot connection test completed successfully")
     else:
-        logger.error("❌ Bot connection test failed") 
+        logger.error("[ERROR] Bot connection test failed") 
