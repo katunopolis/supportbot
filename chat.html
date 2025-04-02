@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Support Chat</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="version" content="1.2.1-fix-20250320">
+    <link rel="stylesheet" href="css/chat-styles.css">
+</head>
+<body>
+    <div class="error-message" id="errorMessage" style="display: none;"></div>
+    <div class="chat-container" id="chatContainer">
+        <div class="chat-header" id="chatHeader">
+            <div class="chat-header-row">
+                <h3 id="requestTitle">Support Request</h3>
+                <div id="requestStatus">Loading...</div>
+            </div>
+            <div class="version-info">v1.2.1-fix</div>
+            <div class="time-info">
+                <span id="clientTimeDisplay">Local: --:--</span>
+                <span id="serverTimeDisplay">Server: --:--</span>
+            </div>
+            <div class="time-difference-indicator" id="timeDifferenceIndicator"></div>
+        </div>
+        <div id="messagesContainer" class="chat-messages"></div>
+    </div>
+    
+    <div class="input-container">
+        <textarea class="message-input" id="messageInput" placeholder="Type a message..." rows="1"></textarea>
+        <button class="send-button" id="sendButton">
+            <svg class="send-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+            </svg>
+        </button>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
