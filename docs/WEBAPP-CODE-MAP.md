@@ -305,7 +305,7 @@ async function loadOpenRequests() {
 
 ### 4. Telegram WebApp Integration
 
-Both interfaces integrate with the Telegram WebApp API to provide a seamless experience within Telegram:
+All WebApp interfaces integrate with the Telegram WebApp API to provide a seamless experience within Telegram, including adaptive theming that matches the user's Telegram theme:
 
 ```javascript
 // Initialize Telegram WebApp
@@ -313,15 +313,28 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.ready();
 
-// Set theme based on Telegram settings
-function setThemeColors() {
-    document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#ffffff');
-    document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#000000');
-    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#2481cc');
-    document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff');
-    document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#999999');
-}
+// Access Telegram theme colors directly
+const setThemeColors = () => {
+    // Standard Telegram theme params
+    document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color);
+    document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color);
+    document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color);
+    document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color);
+    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color);
+    document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color);
+    document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color);
+};
+
+// Set theme colors and update if/when they change
+setThemeColors();
+tg.onEvent('themeChanged', setThemeColors);
 ```
+
+This implementation ensures that:
+1. The WebApp uses the current theme colors from the user's Telegram app
+2. The theme is updated in real-time if the user changes their Telegram theme
+3. No hardcoded fallback colors are used, ensuring consistent appearance
+4. The interface uses official Telegram WebApp theming parameters rather than deprecated properties
 
 ## Data Flow in WebApp
 

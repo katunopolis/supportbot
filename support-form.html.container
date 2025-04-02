@@ -6,24 +6,10 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- Mobile viewport settings -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- Theme color for mobile browsers -->
-    <meta name="theme-color" content="#2481cc">
     <!-- iOS specific meta tags -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="stylesheet" href="style.css">
     <style>
-        /* CSS Variables for Telegram theme colors */
-        :root {
-            --tg-theme-bg-color: #ffffff;
-            --tg-theme-text-color: #000000;
-            --tg-theme-button-color: #2481cc;
-            --tg-theme-button-text-color: #ffffff;
-            --tg-theme-hint-color: #999999;
-            --tg-theme-link-color: #2481cc;
-            --tg-theme-secondary-bg-color: #f0f0f0;
-        }
-
         /* Base styles with Telegram theme support */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -153,14 +139,21 @@
         tg.expand();
         tg.ready();
 
-        // Set theme based on Telegram settings
-        document.documentElement.style.setProperty('--tg-theme-bg-color', tg.backgroundColor || '#ffffff');
-        document.documentElement.style.setProperty('--tg-theme-text-color', tg.textColor || '#000000');
-        document.documentElement.style.setProperty('--tg-theme-button-color', tg.buttonColor || '#2481cc');
-        document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.buttonTextColor || '#ffffff');
-        document.documentElement.style.setProperty('--tg-theme-hint-color', tg.hintColor || '#999999');
-        document.documentElement.style.setProperty('--tg-theme-link-color', tg.linkColor || '#2481cc');
-        document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.secondaryBackgroundColor || '#f0f0f0');
+        // Access Telegram theme colors directly
+        const setThemeColors = () => {
+            // Standard Telegram theme params
+            document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color);
+            document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color);
+            document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color);
+            document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color);
+            document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color);
+            document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color);
+            document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color);
+        };
+
+        // Set theme colors and update if/when they change
+        setThemeColors();
+        tg.onEvent('themeChanged', setThemeColors);
 
         // Get form elements
         const supportForm = document.getElementById('supportForm');

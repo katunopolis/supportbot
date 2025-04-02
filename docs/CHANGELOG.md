@@ -2,6 +2,47 @@
 
 All notable changes to the Support Bot project will be documented in this file.
 
+## [1.2.4] - 2025-04-04 BUGFIX
+
+### Added
+- **ISO 8601 Timestamp Handling**: Implemented robust ISO 8601 timestamp processing throughout the application
+- **Client-Server Time Synchronization**: Added mechanism to detect and adjust for time differences between client and server
+- **Timezone Awareness**: Enhanced chat interface to properly handle messages across different timezones
+- **Time Difference Indicators**: Added visual indicators when significant time differences exist between client and server
+- **Context-Aware Time Display**: Messages now show date context for older messages while keeping today's messages clean
+- **Multiple Time Formats**: Added support for various ISO 8601 timestamp formats (Z suffix, timezone offset, etc.)
+- **Server Time Headers**: Added X-Server-Time response headers for precise synchronization
+- **Real-time Clock Display**: Added client and server time display in chat header
+
+### Fixed
+- **2-Hour Timezone Shift**: Fixed critical issue where messages appeared with incorrect timestamps (2 hours off)
+- **Message Ordering**: Resolved issues where messages could appear out of order due to timezone differences
+- **Timestamp Parsing**: Enhanced timestamp parsing with multiple fallback mechanisms for various formats
+- **Time Display Consistency**: Fixed inconsistent time display between new and existing messages
+- **Polling Reliability**: Improved polling timestamp handling to prevent missed messages
+- **UTC vs Local Time**: Fixed confusion between UTC and local time in message displays
+
+### Changed
+- **Timestamp Storage**: All timestamps now standardized as ISO 8601 with UTC timezone (Z suffix)
+- **Message Time Display**: Enhanced to show both local time and UTC when they differ significantly
+- **API Time Headers**: Enhanced request/response headers to include timezone information
+- **Documentation**: Updated all API and interface documentation to reflect new timestamp handling
+
+## [1.2.3] - 2025-04-03 ENHANCEMENT
+
+### Changed
+- **WebApp Theming System**: Standardized WebApp theme handling across all HTML interfaces
+- **Theme Integration**: Implemented proper use of Telegram's WebApp theming variables
+- **Dynamic Theme Updates**: Added support for real-time theme changes via 'themeChanged' event
+- **Theme Parameters**: Updated all interfaces to use tg.themeParams directly instead of deprecated properties
+- **UI Consistency**: Ensured consistent color usage across all WebApp interfaces
+
+### Removed
+- **Hardcoded Colors**: Eliminated all hardcoded color values from the CSS
+- **Theme Meta Tags**: Removed unnecessary theme-color meta tags
+- **External Stylesheets**: Removed external CSS that might override Telegram theme colors
+- **Fallback Colors**: Removed hardcoded fallback colors to ensure proper Telegram theming
+
 ## [1.2.2] - 2025-04-02 BUGFIX
 
 ### Fixed

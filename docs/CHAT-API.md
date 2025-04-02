@@ -10,11 +10,37 @@ The Chat API enables seamless communication between users and admins by providin
 
 All chat endpoints are prefixed with `/api/chat` and defined in `app/api/routes/chat.py`.
 
+### Timestamp Handling
+
+All timestamp fields in the API use ISO 8601 format in UTC timezone (e.g., `2025-03-17T10:30:00Z`). 
+When filtering messages by timestamp, the API properly handles various timestamp formats:
+
+- ISO 8601 with Z suffix (`2025-03-17T10:30:00Z`)
+- ISO 8601 with timezone offset (`2025-03-17T10:30:00+00:00`)
+- ISO 8601 without timezone info (assumed as UTC)
+
+Clients should include timezone information in request headers to help with time synchronization:
+
+```
+X-Client-Timezone: America/New_York
+X-Client-Time: 2025-03-17T10:30:00Z
+X-Client-Time-Ms: 1710550200000
+```
+
+The server may return a timestamp in response headers for synchronization:
+
+```
+X-Server-Time: 2025-03-17T10:30:05Z
+```
+
 ### Get Chat History
 
 Retrieves the complete conversation history for a specific support request.
 
 **Endpoint:** `GET /api/chat/{request_id}`
+
+**Response Headers:**
+- `X-Server-Time`: Current server time in ISO 8601 format
 
 **Response Model:** `ChatResponse`
 
@@ -24,8 +50,8 @@ Retrieves the complete conversation history for a specific support request.
   "request_id": 123,
   "user_id": 456789012,
   "status": "in_progress",
-  "created_at": "2025-03-17T10:30:00",
-  "updated_at": "2025-03-17T11:45:00",
+  "created_at": "2025-03-17T10:30:00Z",
+  "updated_at": "2025-03-17T11:45:00Z",
   "issue": "I'm having trouble with logging in",
   "solution": null,
   "messages": [
@@ -35,7 +61,7 @@ Retrieves the complete conversation history for a specific support request.
       "sender_id": 456789012,
       "sender_type": "user",
       "message": "I'm having trouble with logging in",
-      "timestamp": "2025-03-17T10:30:00"
+      "timestamp": "2025-03-17T10:30:00Z"
     },
     {
       "id": 2,
@@ -43,9 +69,10 @@ Retrieves the complete conversation history for a specific support request.
       "sender_id": 987654321,
       "sender_type": "admin",
       "message": "I'll help you with that. What happens when you try to log in?",
-      "timestamp": "2025-03-17T10:40:00"
+      "timestamp": "2025-03-17T10:40:00Z"
     }
-  ]
+  ],
+  "server_time": "2025-03-17T11:46:05Z"
 }
 ```
 
@@ -55,14 +82,23 @@ Adds a new message to the conversation.
 
 **Endpoint:** `POST /api/chat/{request_id}/messages`
 
+**Request Headers:**
+- `X-Client-Timestamp`: Client's current time in ISO 8601 format
+- `X-Timezone-Offset`: Client's timezone offset in minutes
+- `X-Client-Time-Ms`: Client's current time in milliseconds since epoch
+
 **Request Body:** `MessageCreate`
 ```json
 {
   "sender_id": 987654321,
   "sender_type": "admin",
-  "message": "Have you tried resetting your password?"
+  "message": "Have you tried resetting your password?",
+  "timestamp": "2025-03-17T11:50:00Z"
 }
 ```
+
+**Response Headers:**
+- `X-Server-Time`: Current server time in ISO 8601 format
 
 **Response Model:** `MessageResponse`
 
@@ -74,7 +110,7 @@ Adds a new message to the conversation.
   "sender_id": 987654321,
   "sender_type": "admin",
   "message": "Have you tried resetting your password?",
-  "timestamp": "2025-03-17T11:50:00"
+  "timestamp": "2025-03-17T11:50:00Z"
 }
 ```
 
@@ -113,7 +149,15 @@ Retrieves messages for a specific support request that were created after a give
 
 **Parameters:**
 - `request_id`: The ID of the support request
-- `since`: (Optional) ISO format timestamp to filter messages created after this time
+- `since`: (Optional) ISO format timestamp (UTC) to filter messages created after this time
+
+**Request Headers:**
+- `X-Last-Timestamp`: Last received message timestamp for more precise filtering
+- `X-User-ID`: Current user ID for message attribution
+- `X-User-Type`: Current user type ('user' or 'admin')
+
+**Response Headers:**
+- `X-Server-Time`: Current server time in ISO 8601 format
 
 **Response Model:** List of `MessageResponse`
 
@@ -126,7 +170,7 @@ Retrieves messages for a specific support request that were created after a give
     "sender_id": 987654321,
     "sender_type": "admin",
     "message": "Have you tried resetting your password?",
-    "timestamp": "2025-03-17T11:50:00"
+    "timestamp": "2025-03-17T11:50:00Z"
   },
   {
     "id": 4,
@@ -134,7 +178,7 @@ Retrieves messages for a specific support request that were created after a give
     "sender_id": 456789012,
     "sender_type": "user",
     "message": "Yes, I tried that but it didn't work",
-    "timestamp": "2025-03-17T11:55:00"
+    "timestamp": "2025-03-17T11:55:00Z"
   }
 ]
 ```
@@ -287,3 +331,45 @@ async function loadChatHistory(requestId) {
 ## Authentication
 
 Currently, these endpoints do not implement authentication. In a production environment, appropriate authentication and authorization mechanisms should be implemented to secure these endpoints. 
+
+## Timestamp Processing in the Backend
+
+The backend API implements careful handling of timestamps for chat functionality:
+
+1. **Standardization**: All timestamps are standardized to ISO 8601 format with UTC timezone.
+2. **Parsing**: The API carefully parses incoming timestamp strings with multiple fallback mechanisms.
+3. **Timezone Awareness**: When converting to database timestamps, timezone information is preserved.
+4. **Filtering Logic**: Messages are filtered using proper timestamp comparisons to ensure no messages are missed.
+
+Example of timestamp processing in the API:
+
+```python
+# Convert the UTC timestamp to datetime - be more lenient with format
+try:
+    # First try standard ISO format with Z suffix
+    since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
+except ValueError:
+    # Try parsing as a datetime without timezone info
+    try:
+        since_dt = datetime.fromisoformat(since)
+        # Add UTC timezone if missing
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        # Last resort: try standard datetime parsing
+        since_dt = datetime.strptime(since, "%Y-%m-%dT%H:%M:%S.%f")
+        since_dt = since_dt.replace(tzinfo=timezone.utc)
+
+# Ensure we have timezone info
+if since_dt.tzinfo is None:
+    since_dt = since_dt.replace(tzinfo=timezone.utc)
+```
+
+## Best Practices for Using the Chat API
+
+1. **Always Include Timezone Info**: Always send timestamps with UTC timezone indicator (Z suffix).
+2. **Handle Time Synchronization**: Implement client-server time synchronization using the `X-Server-Time` header.
+3. **Time Drift Handling**: Check for significant time differences between client and server.
+4. **Proper Timestamp Display**: Display times in the user's local timezone with appropriate context.
+5. **Reliable Polling**: Implement reliable polling with exponential backoff for errors.
+6. **Multiple Endpoint Fallbacks**: Use multiple API endpoints for redundancy in critical operations. 

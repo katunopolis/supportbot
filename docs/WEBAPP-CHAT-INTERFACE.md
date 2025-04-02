@@ -25,6 +25,8 @@ The WebApp Chat Interface provides the following features:
 8. **Status Information**: Shows the current status of the support request
 9. **Responsive Design**: Works on both mobile and desktop Telegram clients
 10. **Fallback Mechanism**: Gracefully handles API errors with fallback UI
+11. **ISO 8601 Timestamp Handling**: Properly manages timezone differences between client and server
+12. **Time Synchronization**: Adjusts for time differences between client and server clocks
 
 ## Implementation Details
 
@@ -90,16 +92,111 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.ready();
 
-// Set theme based on Telegram settings
-function setThemeColors() {
-    document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#ffffff');
-    document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#000000');
-    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#2481cc');
-    document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff');
-    document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#999999');
-    document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color || '#f1f1f1');
+// Access Telegram theme colors directly
+const setThemeColors = () => {
+    // Standard Telegram theme params
+    document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color);
+    document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color);
+    document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color);
+    document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color);
+    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color);
+    document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color);
+    document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color);
+};
+
+// Set theme colors and update if/when they change
+setThemeColors();
+tg.onEvent('themeChanged', setThemeColors);
+```
+
+The theme handling implementation ensures:
+- Proper usage of Telegram's official theme parameters
+- Real-time theme updates when the user changes their Telegram theme 
+- No fallback colors that might override Telegram's theme
+- Consistent appearance across light and dark modes
+- CSS variables that can be used throughout the interface
+
+### Time and Timezone Handling
+
+The interface incorporates sophisticated timestamp handling to ensure consistent time display across different timezones:
+
+```javascript
+// Initialize server time offset detection
+let serverTimeOffset = 0; // Time difference between server and client in milliseconds
+
+// Synchronize client time with server time to account for differences
+function syncTimeWithServer(clientTime, serverTime) {
+    try {
+        const clientDate = new Date(clientTime);
+        const serverDate = new Date(serverTime);
+        
+        // Calculate time difference in milliseconds
+        serverTimeOffset = serverDate.getTime() - clientDate.getTime();
+        console.log(`Time sync: Server time is ${serverTimeOffset > 0 ? 'ahead by' : 'behind by'} ${Math.abs(serverTimeOffset) / 1000} seconds`);
+        
+        // Update the time difference indicator if significant
+        if (Math.abs(serverTimeOffset) > 60000) { // More than a minute difference
+            updateTimeDifferenceIndicator(Math.round(Math.abs(serverTimeOffset) / 60000), serverTimeOffset > 0);
+        }
+    } catch (e) {
+        console.error('Error synchronizing time with server:', e);
+    }
+}
+
+// Get current timestamp adjusted for server time if needed
+function getCurrentTimestamp() {
+    const now = new Date();
+    
+    // If we have a significant server time offset, adjust the timestamp
+    if (Math.abs(serverTimeOffset) > 5000) { // Only adjust if offset is more than 5 seconds
+        const serverAdjustedTime = new Date(now.getTime() + serverTimeOffset);
+        return serverAdjustedTime.toISOString();
+    }
+    
+    return now.toISOString();
+}
+
+// Format date for display in messages with proper timezone handling
+function formatDateForDisplay(isoString) {
+    try {
+        // Parse the ISO string (which is in UTC format)
+        const date = new Date(isoString);
+        
+        // Check if the message is from today
+        const today = new Date();
+        const isToday = date.getDate() === today.getDate() && 
+                       date.getMonth() === today.getMonth() && 
+                       date.getFullYear() === today.getFullYear();
+        
+        // Format time explicitly using local values
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const timeString = `${hours}:${minutes}`;
+        
+        // Format date parts if needed
+        if (isToday) {
+            // Just show time for today's messages
+            return timeString;
+        } else {
+            // Show date and time for older messages
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0'); // getMonth() is 0-based
+            return `${day}/${month} ${timeString}`;
+        }
+    } catch (e) {
+        return '??:??'; // Fallback for invalid dates
+    }
 }
 ```
+
+The timestamp handling implementation ensures:
+- Proper ISO 8601 format for all timestamps
+- Timezone awareness across client and server
+- Adjustment for clock differences between client and server
+- Context-aware time display (time only for today's messages, date+time for older messages)
+- Visual indication when client and server clocks differ significantly
+- Consistent timestamp display in message history
+- Proper handling of UTC timestamps from server
 
 ### API Integration
 
@@ -165,86 +262,122 @@ async function sendChatMessage(requestId) {
 
 ### Polling for Updates
 
-To keep the conversation current, the interface polls for new messages using the timestamp-based endpoint:
+To keep the conversation current, the interface polls for new messages using the timestamp-based endpoint with improved handling for timezones:
 
 ```javascript
 function startPolling(requestId) {
     // Clear any existing polling
-    if (pollingInterval) {
-        clearInterval(pollingInterval);
+    stopPolling();
+    
+    // Ensure we have a valid timestamp before starting polling
+    if (!lastMessageTimestamp) {
+        lastMessageTimestamp = getCurrentTimestamp();
+    } else {
+        lastMessageTimestamp = formatTimestamp(lastMessageTimestamp);
     }
     
-    // Set last message timestamp
-    let lastMessageTimestamp = new Date();
+    isPolling = true;
     
-    // Poll for new messages every 3 seconds
-    pollingInterval = setInterval(async () => {
+    async function pollMessages() {
         try {
-            // Only poll if we're still in chat view
-            if (currentView !== 'chat') {
-                clearInterval(pollingInterval);
-                return;
+            const timestamp = formatTimestamp(lastMessageTimestamp);
+            
+            // Try multiple endpoints for better reliability
+            const endpoints = [
+                `${API_BASE_URL}/api/chat/${requestId}/messages?since=${encodeURIComponent(timestamp)}`,
+                `${API_BASE_URL}/api/support/chat/${requestId}/messages?since=${encodeURIComponent(timestamp)}`
+            ];
+            
+            // Try each endpoint until one succeeds
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint, {
+                        headers: {
+                            'Cache-Control': 'no-cache',
+                            'X-Last-Timestamp': timestamp,
+                            'X-User-ID': currentUserId,
+                            'X-User-Type': currentUserType
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const messages = await response.json();
+                        
+                        // Process new messages with proper timestamp comparison
+                        messages.forEach(msg => {
+                            const msgTimestamp = formatTimestamp(msg.timestamp);
+                            
+                            // Only add message if it's newer than last seen
+                            if (isNewerTimestamp(msgTimestamp, lastMessageTimestamp)) {
+                                addMessage(msg);
+                                lastMessageTimestamp = msgTimestamp;
+                            }
+                        });
+                        
+                        break; // Exit the endpoints loop if successful
+                    }
+                } catch (error) {
+                    // Will try next endpoint
+                }
             }
-            
-            const since = lastMessageTimestamp.toISOString();
-            const response = await fetch(
-                `${API_BASE_URL}/api/chat/${requestId}/messages?since=${encodeURIComponent(since)}`
-            );
-            
-            if (!response.ok) {
-                throw new Error(`Failed to poll messages: ${response.status}`);
-            }
-            
-            const newMessages = await response.json();
-            
-            if (newMessages && newMessages.length > 0) {
-                // Update lastMessageTimestamp
-                lastMessageTimestamp = new Date(newMessages[newMessages.length - 1].timestamp);
-                
-                // Add new messages to UI...
-            }
-            
         } catch (error) {
             console.error('Error polling messages:', error);
         }
-    }, 3000);
+    }
+    
+    // Poll for messages every second
+    pollingInterval = setInterval(pollMessages, 1000);
+    pollMessages(); // Initial poll
 }
 ```
 
-### Fallback Mechanism
+### Message Display
 
-The interface includes a fallback mechanism to handle API errors gracefully:
+Messages are displayed with proper timezone handling:
 
 ```javascript
-// If the API fails, create a fallback chat with just the initial message
-const fallbackChat = {
-    request_id: requestId,
-    user_id: tg.initDataUnsafe.user.id,
-    status: "pending",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    issue: document.getElementById('issue')?.value || "Support request",
-    solution: null,
-    messages: [{
-        id: 1,
-        request_id: requestId,
-        sender_id: tg.initDataUnsafe.user.id,
-        sender_type: "user",
-        message: document.getElementById('issue')?.value || "Support request",
-        timestamp: new Date().toISOString()
-    }]
-};
+function addMessage(message) {
+    // Ensure ISO timestamp for display
+    const timestamp = formatTimestamp(message.timestamp);
+    const displayTime = formatDateForDisplay(timestamp);
+    
+    // For messages with significant timezone differences, show both local and UTC time
+    const date = new Date(timestamp);
+    const utcHours = date.getUTCHours().toString().padStart(2, '0');
+    const utcMinutes = date.getUTCMinutes().toString().padStart(2, '0');
+    const utcTimeString = `${utcHours}:${utcMinutes}`;
+    
+    const localHours = date.getHours().toString().padStart(2, '0');
+    const localMinutes = date.getMinutes().toString().padStart(2, '0');
+    const localTimeString = `${localHours}:${localMinutes}`;
+    
+    // Determine if we need to show both times for clarity
+    const showBothTimes = localTimeString !== utcTimeString;
+    const timeDisplay = showBothTimes ? 
+        `${displayTime} (UTC: ${utcTimeString})` : 
+        displayTime;
+    
+    // Display message with appropriate time information
+    // ...
+}
+```
 
-// Update the chat interface with fallback data
-document.getElementById('requestStatus').textContent = `Status: ${fallbackChat.status}`;
-document.getElementById('messagesContainer').innerHTML = `
-    <div class="status">Issue: ${fallbackChat.issue}</div>
-    ${fallbackChat.messages.map(msg => createMessageHTML(msg)).join('')}
-    <div class="status">
-        Note: We're experiencing some technical difficulties. 
-        Your request has been submitted and our team will respond shortly.
+### Time Indicators
+
+The interface provides visual time indicators in the chat header:
+
+```html
+<div class="chat-header">
+    <div class="chat-header-row">
+        <h3 id="requestTitle">Support Request #${requestId}</h3>
+        <div id="requestStatus">Status: ${status}</div>
     </div>
-`;
+    <div class="time-info">
+        <span id="clientTimeDisplay">Local: ${clientTime}</span>
+        <span id="serverTimeDisplay">Server: ${serverTime}</span>
+    </div>
+    <div class="time-difference-indicator" id="timeDifferenceIndicator"></div>
+</div>
 ```
 
 ## Styling

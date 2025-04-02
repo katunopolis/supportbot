@@ -36,6 +36,7 @@ The Support Bot is a Telegram-based customer support system that:
 
 - [Code Map](CODE-MAP.md) - Overview of the codebase structure
 - [WebApp Code Map](WEBAPP-CODE-MAP.md) - WebApp architecture details
+- [WebApp Theming](THEMING.md) - Guidelines for proper Telegram WebApp theming
 - [Database Schema](DATABASE.md) - Database models and relationships
 - [API Documentation](API.md) - API endpoints and usage
 - [Chat Interface](WEBAPP-CHAT-INTERFACE.md) - How the chat interface works
