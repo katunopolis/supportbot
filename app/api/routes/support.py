@@ -117,10 +117,34 @@ class WebAppLog(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 @router.post("/support-request")
-async def create_request(
+async def create_support_request(
     data: dict,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
+):
+    """
+    Create a new support request from the web app.
+    This function can be called directly or via HTTP request.
+    """
+    return await create_request(data, background_tasks, db)
+
+# Add an additional endpoint to match the frontend's expected path
+@router.post("/request")
+async def create_request_alt(
+    data: dict,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Alternative endpoint that matches the frontend's expected path.
+    """
+    logging.info("Using alternative endpoint '/request' for support request creation")
+    return await create_request(data, background_tasks, db)
+
+async def create_request(
+    data: dict,
+    background_tasks: BackgroundTasks,
+    db: Session
 ):
     """
     Create a new support request from the web app.

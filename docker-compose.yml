@@ -8,15 +8,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./.env:/app/.env
+    env_file:
+      - .env
     environment:
-      - SUPPORT_BOT_TOKEN=${SUPPORT_BOT_TOKEN}
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/supportbot
-      - MAX_CONNECTIONS=20
-      - POOL_TIMEOUT=30
-      - ENVIRONMENT=development
-      - RAILWAY_PUBLIC_DOMAIN=cc04-185-63-98-50.ngrok-free.app
-      - WEBAPP_SERVICE_URL=http://webapp:3000
     depends_on:
       - db
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
