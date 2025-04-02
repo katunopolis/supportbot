@@ -33,6 +33,12 @@ webhook_times = []
 last_errors = []
 start_time = time.time()
 
+# Add endpoint mapping to make debugging easier
+SUPPORT_ENDPOINTS = {
+    "/support-request": "/api/support/support-request",
+    "/api/support/support-request": "/support/support-request"
+}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events for the FastAPI application."""
@@ -239,13 +245,72 @@ async def proxy_webapp(request: Request):
     is_chat_api = path.startswith("/api/chat/") or path.startswith("/api/chat_api/")
     
     # Don't proxy most /api/* routes, /webhook, or /healthz, but allow chat API and support-request
-    if (((path.startswith("/api/") and not is_chat_api and not path == "/api/support/request") or 
+    if (((path.startswith("/api/") and not is_chat_api and not path == "/api/support/request" and not path == "/api/support/support-request") or 
         path == "/webhook" or 
         path == "/healthz" or
+        path == "/support-request" or
         path.startswith("/debug/") or
         path.startswith("/fixed-chat/"))):
         logging.info(f"Not proxying special route: {path}")
         return Response(content="Not Found", status_code=404)
+    
+    # Handle POST to /support-request or /api/support/support-request directly (from the WebApp)
+    if (path == "/support-request" or path == "/api/support/support-request") and request.method == "POST":
+        logging.info(f"Handling direct support-request submission from WebApp: {path}")
+        try:
+            # Parse the JSON body
+            body = await request.json()
+            logging.info(f"Request body: {body}")
+            
+            # Get database session for the handler
+            from app.database.session import get_db
+            from fastapi import BackgroundTasks
+            
+            # Create a BackgroundTasks object and get a database session
+            background_tasks = BackgroundTasks()
+            db = next(get_db())
+            
+            try:
+                # Call the create_request function from support.py with the required parameters
+                from app.api.routes.support import create_request
+                logging.info("Calling create_request function directly (no proxying)...")
+                result = await create_request(body, background_tasks, db)
+                logging.info(f"create_request result: {result}")
+                
+                # Execute the background task directly
+                from app.bot.handlers.support import notify_admin_group
+                request_id = result.get("request_id")
+                user_id = body.get("user_id")
+                issue = body.get("issue")
+                
+                if request_id and user_id and issue:
+                    logging.info(f"Manually executing admin notification for request {request_id}")
+                    import asyncio
+                    asyncio.create_task(notify_admin_group(request_id, user_id, issue))
+                
+                return JSONResponse(
+                    status_code=200,
+                    content=result
+                )
+            except Exception as e:
+                logging.error(f"Error processing request: {str(e)}")
+                import traceback
+                logging.error(traceback.format_exc())
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "Failed to process request", "details": str(e)}
+                )
+            finally:
+                # Ensure DB session is closed
+                db.close()
+        except Exception as e:
+            logging.error(f"Error handling support request: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to parse request", "details": str(e)}
+            )
     
     # Handle POST to /api/support/request by redirecting to our internal API
     if path == "/api/support/request" and request.method == "POST":

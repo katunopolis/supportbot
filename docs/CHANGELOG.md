@@ -2,6 +2,13 @@
 
 All notable changes to the Support Bot project will be documented in this file.
 
+## [1.2.2] - 2025-04-02 BUGFIX
+
+### Fixed
+- **Support Request Endpoint**: Fixed the `/support-request` endpoint in web application to properly route requests to the working API endpoint (`/api/support/request`) in the supportbot service
+- **API Integration**: Improved error handling in the webapp's server.js to better capture and report API errors
+- **Logging Enhancement**: Updated log messages to clearly show request routing paths
+
 ## [1.2.1] - 2025-03-20 STABLE
 
 ### Fixed

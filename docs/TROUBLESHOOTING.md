@@ -807,4 +807,59 @@ To verify the fix is working correctly:
 
 ## API Routing Issues
 
+### Support Request Endpoint Configuration Issue
+
+**Symptom**: Support request submissions through the webapp fail with 500 errors when sent to `/support-request` endpoint, but work with the `/api/support/request` endpoint.
+
+**Logs Show**:
+```
+Received support request submission
+Request body: { user_id: 123456, issue: 'Test issue' }
+Sending support request to supportbot container at /support-request
+Support request failed with status 500
+Error submitting support request: Error: API returned status 500: {"status":"error","message":""}
+```
+
+**Root Cause**:  
+In the webapp's `server.js` file, the `/support-request` endpoint was configured to forward requests to a non-existent `/support-request` path on the supportbot service. However, the only working endpoint in the supportbot service is `/api/support/request`.
+
+**Solution**:
+1. Edit the `server.js` file in the webapp service to correctly route requests:
+   ```javascript
+   app.post('/support-request', async (req, res) => {
+       console.log('Received support request submission');
+
+       try {
+           const apiHost = 'supportbot';
+           const apiPort = 8000;
+           const requestBody = req.body;
+
+           console.log('Request body:', requestBody);
+
+           const options = {
+               hostname: apiHost,
+               port: apiPort,
+               path: '/api/support/request', // Changed to use the working API endpoint
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json'
+               },
+               timeout: 10000 // 10 second timeout
+           };
+
+           console.log('Proxying support request to supportbot service API endpoint');
+
+           // Rest of the function remains the same
+       }
+   }
+   ```
+
+2. Apply the change and restart the webapp container:
+   ```bash
+   docker restart support-bot-webapp-1
+   ```
+
+**Verification**:
+After making this change, submit a new support request to the '/support-request' endpoint. You should receive a successful response with a `request_id`.
+
 // ... existing code ... 

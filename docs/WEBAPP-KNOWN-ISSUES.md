@@ -4,6 +4,56 @@ This document tracks significant issues identified in the WebApp components of t
 
 ## Resolved Issues
 
+### Support Request Endpoint Configuration Issue (Resolved in v1.2.2)
+
+#### Issue Description
+Support requests submitted through the web application's `/support-request` endpoint were failing with 500 errors, preventing users from successfully creating support tickets through the web interface. The error only affected direct requests to this endpoint.
+
+#### Root Cause
+In the webapp's `server.js` file, the `/support-request` endpoint was configured to forward requests to a non-existent path in the supportbot service:
+
+```javascript
+// Problematic code
+const options = {
+    hostname: apiHost,
+    port: apiPort,
+    path: '/support-request', // Incorrect path - this endpoint doesn't exist
+    method: 'POST',
+    // ...
+};
+```
+
+The supportbot service only had a working endpoint at `/api/support/request`, but the webapp was trying to use `/support-request`.
+
+#### Solution
+The solution was to update the endpoint path in the webapp's `server.js` file to properly route requests to the correct API endpoint:
+
+```javascript
+// Fixed code
+const options = {
+    hostname: apiHost,
+    port: apiPort,
+    path: '/api/support/request', // Changed to use the working API endpoint
+    method: 'POST',
+    // ...
+};
+```
+
+Additionally, the log message was updated to be more descriptive:
+```javascript
+// Before
+console.log('Sending support request to supportbot container at /support-request');
+
+// After 
+console.log('Proxying support request to supportbot service API endpoint');
+```
+
+#### Verification
+This issue has been successfully resolved in version 1.2.2 (released 2025-04-02). The fix can be verified by:
+1. Submitting a support request to the `/support-request` endpoint
+2. Confirming a successful response with a `request_id`
+3. Checking logs to verify the request is properly routed to the supportbot service
+
 ### Message Visibility in Chat Interface (Resolved in v1.2.1)
 
 #### Issue Description
